@@ -1,10 +1,11 @@
 """
-Brain Orchestrator – think + agents + memory + HITL + checkpoints.
+Brain Orchestrator – think + agents + memory + HITL + checkpoints + async.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Union
+import asyncio
+from typing import Any, Callable, Dict, Optional, Union
 
 from core.logger import logger
 from core.event_bus import event_bus
@@ -20,17 +21,6 @@ class Orchestrator:
 
 
 class BrainOrchestrator:
-    """
-    Tam kognitiv orchestrator.
-
-    Dəstək:
-    - ThinkingBrain
-    - Agent / Crew
-    - Session + Archival memory
-    - Checkpoint
-    - Human-in-the-loop (callback)
-    """
-
     def __init__(self, brain_name: str = "ZenthonBrain"):
         from brain.core_brain import ThinkingBrain
 
@@ -44,7 +34,6 @@ class BrainOrchestrator:
         logger.info("BrainOrchestrator ready.")
 
     def set_hitl(self, callback: Callable[[Dict], bool]) -> None:
-        """Human-in-the-loop: callback(result) → True=continue/accept, False=reject."""
         self._hitl = callback
 
     @property
@@ -102,24 +91,20 @@ class BrainOrchestrator:
         archive_result: bool = False,
         checkpoint_name: Optional[str] = None,
     ) -> Dict[str, Any]:
-        # Session context
         query = input_data if isinstance(input_data, str) else str(input_data)
         if use_session:
             self.session.add("user", query)
             sess_ctx = self.session.as_context(8)
-            if sess_ctx:
-                query_for_brain = f"Söhbət konteksti:\n{sess_ctx}\n\nCari sual: {query}"
-            else:
-                query_for_brain = query
+            query_for_brain = (
+                f"Söhbət konteksti:\n{sess_ctx}\n\nCari sual: {query}" if sess_ctx else query
+            )
         else:
             query_for_brain = query
 
-        # Archival hints
         archival_hits = self.archival.search(query, top_k=3)
         if archival_hits:
             query_for_brain += "\n\nArxiv xatirələr:\n" + "\n".join(f"- {h}" for h in archival_hits)
 
-        # Think
         result = self.brain.think(
             query_for_brain,
             goal=goal,
@@ -127,7 +112,6 @@ class BrainOrchestrator:
             use_knowledge=True,
         )
 
-        # Agent
         if agent_type and self.agents:
             try:
                 agent = self.agents.create(agent_type)
@@ -142,7 +126,6 @@ class BrainOrchestrator:
             except Exception as e:
                 result["agent"] = {"type": agent_type, "success": False, "error": str(e)}
 
-        # HITL
         if self._hitl:
             accepted = self._hitl(result)
             result["hitl_accepted"] = bool(accepted)
@@ -155,7 +138,6 @@ class BrainOrchestrator:
                 event_bus.publish("HITLRejected", {"cycle": result.get("cycle")}, source="orchestrator")
                 return result
 
-        # Session + archival
         if use_session and result.get("conclusion"):
             self.session.add("assistant", str(result["conclusion"])[:1000])
 
@@ -172,17 +154,13 @@ class BrainOrchestrator:
             except Exception:
                 pass
 
-        # Checkpoint
         if checkpoint_name:
             try:
                 from core.checkpoint import checkpoint_store
+
                 cp_id = checkpoint_store.save(
                     checkpoint_name,
-                    {
-                        "result": result,
-                        "session": self.session.history(20),
-                        "goal": goal,
-                    },
+                    {"result": result, "session": self.session.history(20), "goal": goal},
                 )
                 result["checkpoint_id"] = cp_id
             except Exception as e:
@@ -199,6 +177,11 @@ class BrainOrchestrator:
             source="orchestrator",
         )
         return result
+
+    async def arun(self, *args, **kwargs) -> Dict[str, Any]:
+        """Async run – event loop bloklanmır."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, lambda: self.run(*args, **kwargs))
 
     def status(self) -> Dict[str, Any]:
         return {
