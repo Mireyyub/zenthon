@@ -1,7 +1,7 @@
 """
 Core Thinking Brain – dərinləşdirilmiş kognitiv nüvə.
 
-Perception → Memory/Knowledge retrieval → Reasoning → Reflection → Decision
+Perception → Memory/Knowledge/GraphRAG → Reasoning → Reflection → Decision
 """
 
 from __future__ import annotations
@@ -48,16 +48,16 @@ class ThinkingBrain:
         self.enable_meta = enable_meta
         self.state = BrainState()
         self._perception = None
-        self._memory = None          # brain internal memory dict
-        self._memory_manager = None  # platform MemoryManager
+        self._memory = None
+        self._memory_manager = None
         self._knowledge = None
+        self._graphrag = None
         self._reasoning = None
         self._action = None
         self._reflection = None
         self._goals = None
         logger.info(f"ThinkingBrain '{self.name}' initialized (meta={enable_meta}).")
 
-    # ── Lazy loaders ──────────────────────────────────────────────
     @property
     def perception(self):
         if self._perception is None:
@@ -99,6 +99,16 @@ class ThinkingBrain:
         return self._knowledge
 
     @property
+    def graphrag(self):
+        if self._graphrag is None:
+            try:
+                from knowledge.graphrag import GraphRAG
+                self._graphrag = GraphRAG()
+            except Exception:
+                self._graphrag = None
+        return self._graphrag
+
+    @property
     def reasoning(self):
         if self._reasoning is None:
             from brain.reasoning.chain_of_thought import ChainOfThought
@@ -134,7 +144,6 @@ class ThinkingBrain:
             self._goals = GoalManager()
         return self._goals
 
-    # ── Main think cycle ──────────────────────────────────────────
     def think(
         self,
         input_data: Union[str, Dict[str, Any], List[Any]],
@@ -152,7 +161,6 @@ class ThinkingBrain:
 
         logger.info(f"[Brain Cycle {self.state.cycle_count}] START | mode={reasoning_mode}")
 
-        # 1. Perception
         perceived = self.perception.process(input_data)
         thought = Thought(
             content=str(perceived.get("summary", perceived)),
@@ -164,10 +172,8 @@ class ThinkingBrain:
         )
         self._add_to_working_memory(thought)
 
-        # 2. Rich context retrieval (brain memory + platform memory + knowledge)
         relevant = self._retrieve_full_context(thought, use_knowledge=use_knowledge)
 
-        # 3. Reasoning
         selected_mode = self._select_mode(reasoning_mode, thought, goal)
         reasoner = self.reasoning.get(selected_mode, self.reasoning["cot"])
         reasoning_result = reasoner.reason(
@@ -178,7 +184,6 @@ class ThinkingBrain:
         )
         self.state.last_reasoning_trace = reasoning_result.get("trace", [])
 
-        # 4. Reflection
         if self.enable_meta:
             report = self.reflection_engine.reflect(
                 reasoning_result,
@@ -191,7 +196,6 @@ class ThinkingBrain:
                 f"[{report.quality}] {', '.join(report.issues) or 'ok'}"
             )
 
-        # 5. Auto-rethink on low confidence
         confidence = float(reasoning_result.get("confidence", 0.0))
         used_modes = [selected_mode]
 
@@ -218,7 +222,6 @@ class ThinkingBrain:
 
         self.state.uncertainty = 1.0 - confidence
 
-        # 6. Persist memories
         self.memory["short_term"].add(thought)
         self.memory["episodic"].store_episode(
             event=thought.content,
@@ -235,7 +238,6 @@ class ThinkingBrain:
             except Exception:
                 pass
 
-        # 7. Decision
         decision = self.action.decide(
             reasoning_result=reasoning_result,
             goal=self.state.current_goal,
@@ -272,16 +274,13 @@ class ThinkingBrain:
         )
         return result
 
-    # ── Context retrieval ─────────────────────────────────────────
     def _retrieve_full_context(self, thought: Thought, use_knowledge: bool = True) -> List[str]:
         ctx: List[str] = []
 
-        # Internal brain memories
         ctx += self.memory["short_term"].retrieve(top_k=4)
         ctx += self.memory["long_term"].retrieve(query=thought.content, top_k=3)
         ctx += self.memory["episodic"].retrieve(query=thought.content, top_k=2)
 
-        # Platform MemoryManager
         if self.memory_manager:
             try:
                 recalled = self.memory_manager.recall(thought.content, top_k=3)
@@ -289,11 +288,12 @@ class ThinkingBrain:
                     ctx.append(text)
                 for fact in recalled.get("semantic", [])[:2]:
                     if isinstance(fact, dict):
-                        ctx.append(f"{fact.get('subject')} {fact.get('predicate')} {fact.get('object')}")
+                        ctx.append(
+                            f"{fact.get('subject')} {fact.get('predicate')} {fact.get('object')}"
+                        )
             except Exception:
                 pass
 
-        # Knowledge
         if use_knowledge and self.knowledge:
             try:
                 kr = self.knowledge.retrieve(thought.content, top_k=3)
@@ -304,7 +304,14 @@ class ThinkingBrain:
             except Exception:
                 pass
 
-        # Dedupe
+        # GraphRAG hybrid
+        if use_knowledge and self.graphrag:
+            try:
+                gr = self.graphrag.retrieve(thought.content, top_k=4)
+                ctx.extend(gr.get("combined", [])[:4])
+            except Exception:
+                pass
+
         seen = set()
         unique = []
         for c in ctx:
@@ -312,7 +319,7 @@ class ThinkingBrain:
             if key not in seen:
                 seen.add(key)
                 unique.append(str(c))
-        return unique[:12]
+        return unique[:14]
 
     def _add_to_working_memory(self, thought: Thought) -> None:
         self.state.working_memory.append(thought)
@@ -346,7 +353,6 @@ class ThinkingBrain:
     def _pick_alternative_mode(self, current: str) -> str:
         return {"cot": "tot", "tot": "sot", "sot": "cot"}.get(current, "tot")
 
-    # ── Public helpers ────────────────────────────────────────────
     def set_goal(self, goal: str) -> List[str]:
         self.state.current_goal = goal
         plan = self.reasoning["planner"].create_plan(goal)
