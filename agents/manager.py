@@ -38,6 +38,9 @@ class AgentManager:
     def list_agents(self) -> List[Dict[str, Any]]:
         return [a.info() for a in self._agents.values()]
 
+    def list_types(self) -> List[str]:
+        return list(self._registry.keys())
+
     def run(self, agent_id: str, task: str, context: Optional[Dict] = None) -> AgentResult:
         agent = self._agents.get(agent_id)
         if not agent:
@@ -61,24 +64,24 @@ class AgentManager:
         return False
 
 
-# Global manager + default types
 agent_manager = AgentManager()
 
 
 def _register_defaults():
+    from agents.coding_agent import CodingAgent
+    from agents.research_agent import ResearchAgent
+    from agents.executor_agent import ExecutorAgent
+    agent_manager.register_type("coding", CodingAgent)
+    agent_manager.register_type("research", ResearchAgent)
+    agent_manager.register_type("executor", ExecutorAgent)
     try:
-        from agents.coding_agent import CodingAgent
-        agent_manager.register_type("coding", CodingAgent)
+        from agents.vision_agent import VisionAgent
+        agent_manager.register_type("vision", VisionAgent)
     except ImportError:
         pass
     try:
-        from agents.research_agent import ResearchAgent
-        agent_manager.register_type("research", ResearchAgent)
-    except ImportError:
-        pass
-    try:
-        from agents.executor_agent import ExecutorAgent
-        agent_manager.register_type("executor", ExecutorAgent)
+        from agents.voice_agent import VoiceAgent
+        agent_manager.register_type("voice", VoiceAgent)
     except ImportError:
         pass
 
