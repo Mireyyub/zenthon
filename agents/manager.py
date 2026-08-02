@@ -1,4 +1,4 @@
-"""Agent Manager – agentlərin yaradılması və idarəsi."""
+"""Agent Manager – bütün agent tiplərinin qeydiyyatı."""
 
 from __future__ import annotations
 
@@ -71,9 +71,11 @@ def _register_defaults():
     from agents.coding_agent import CodingAgent
     from agents.research_agent import ResearchAgent
     from agents.executor_agent import ExecutorAgent
+
     agent_manager.register_type("coding", CodingAgent)
     agent_manager.register_type("research", ResearchAgent)
     agent_manager.register_type("executor", ExecutorAgent)
+
     try:
         from agents.vision_agent import VisionAgent
         agent_manager.register_type("vision", VisionAgent)
@@ -82,6 +84,16 @@ def _register_defaults():
     try:
         from agents.voice_agent import VoiceAgent
         agent_manager.register_type("voice", VoiceAgent)
+    except ImportError:
+        pass
+    try:
+        from agents.react_agent import ReActAgent
+        agent_manager.register_type("react", ReActAgent)
+    except ImportError:
+        pass
+    try:
+        from agents.pev import PEVAgent
+        agent_manager.register_type("pev", PEVAgent)
     except ImportError:
         pass
 
