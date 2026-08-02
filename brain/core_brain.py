@@ -1,4 +1,8 @@
-"""Core Thinking Brain for Zenthon"""
+"""
+Core Thinking Brain for Zenthon Multimodal AI System.
+
+Perception → Memory → Reasoning → Action dövrünü idarə edən kognitiv nüvə.
+"""
 
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass, field
@@ -10,6 +14,7 @@ from core.logger import logger
 
 @dataclass
 class Thought:
+    """Tək bir düşüncə vahidi."""
     id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     content: str = ""
     modality: str = "text"
@@ -20,14 +25,24 @@ class Thought:
 
 @dataclass
 class BrainState:
+    """Beynin cari vəziyyəti."""
     working_memory: List[Thought] = field(default_factory=list)
     current_goal: Optional[str] = None
     active_plan: List[str] = field(default_factory=list)
     last_reasoning_trace: List[str] = field(default_factory=list)
     cycle_count: int = 0
+    last_decision: Optional[Dict[str, Any]] = None
 
 
 class ThinkingBrain:
+    """
+    Zenthon-un əsas düşünən beyni.
+
+    Multimodal AI tətbiqləri üçün kognitiv nüvə.
+    """
+
+    MAX_WORKING_MEMORY = 30
+
     def __init__(self, name: str = "ZenthonBrain"):
         self.name = name
         self.state = BrainState()
@@ -37,6 +52,9 @@ class ThinkingBrain:
         self._action = None
         logger.info(f"ThinkingBrain '{self.name}' initialized.")
 
+    # ------------------------------------------------------------------
+    # Lazy-loaded submodules
+    # ------------------------------------------------------------------
     @property
     def perception(self):
         if self._perception is None:
@@ -51,7 +69,7 @@ class ThinkingBrain:
             from brain.memory.long_term import LongTermMemory
             from brain.memory.episodic import EpisodicMemory
             self._memory = {
-                "short_term": ShortTermMemory(),
+                "short_term": ShortTermMemory(capacity=self.MAX_WORKING_MEMORY),
                 "long_term": LongTermMemory(),
                 "episodic": EpisodicMemory(),
             }
@@ -79,29 +97,66 @@ class ThinkingBrain:
             self._action = DecisionEngine()
         return self._action
 
-    def think(self, input_data: Union[str, Dict[str, Any], List[Any]],
-              goal: Optional[str] = None, reasoning_mode: str = "cot",
-              max_steps: int = 8) -> Dict[str, Any]:
-        self.state.cycle_count += 1
-        self.state.current_goal = goal
-        logger.info(f"[Brain Cycle {self.state.cycle_count}] Thinking started. Mode={reasoning_mode}")
+    # ------------------------------------------------------------------
+    # Əsas düşünmə dövrü
+    # ------------------------------------------------------------------
+    def think(
+        self,
+        input_data: Union[str, Dict[str, Any], List[Any]],
+        goal: Optional[str] = None,
+        reasoning_mode: str = "auto",
+        max_steps: int = 8,
+    ) -> Dict[str, Any]:
+        """
+        Əsas düşünmə funksiyası.
 
+        Args:
+            input_data: Mətn, dict (multimodal) və ya list.
+            goal: Məqsəd (opsional).
+            reasoning_mode: "cot" | "tot" | "sot" | "auto"
+            max_steps: Maksimum düşünmə addımı.
+
+        Returns:
+            Nəticə lüğəti (conclusion, trace, decision, confidence və s.).
+        """
+        self.state.cycle_count += 1
+        if goal:
+            self.state.current_goal = goal
+
+        logger.info(
+            f"[Brain Cycle {self.state.cycle_count}] Thinking started | mode={reasoning_mode}"
+        )
+
+        # 1. Perception
         perceived = self.perception.process(input_data)
         thought = Thought(
             content=str(perceived.get("summary", perceived)),
             modality=perceived.get("modality", "text"),
-            confidence=perceived.get("confidence", 0.9),
+            confidence=float(perceived.get("confidence", 0.9)),
             metadata=perceived,
         )
-        self.state.working_memory.append(thought)
 
+        # İş yaddaşı limiti
+        self.state.working_memory.append(thought)
+        if len(self.state.working_memory) > self.MAX_WORKING_MEMORY:
+            self.state.working_memory = self.state.working_memory[-self.MAX_WORKING_MEMORY :]
+
+        # 2. Memory retrieval
         relevant = self._retrieve_relevant_memories(thought)
-        reasoner = self._select_reasoner(reasoning_mode)
+
+        # 3. Reasoning mode seçimi
+        selected_mode = self._select_mode(reasoning_mode, thought, goal)
+        reasoner = self.reasoning.get(selected_mode, self.reasoning["cot"])
+
         reasoning_result = reasoner.reason(
-            query=thought.content, context=relevant, goal=goal, max_steps=max_steps
+            query=thought.content,
+            context=relevant,
+            goal=self.state.current_goal,
+            max_steps=max_steps,
         )
         self.state.last_reasoning_trace = reasoning_result.get("trace", [])
 
+        # 4. Yaddaşa yaz
         self.memory["short_term"].add(thought)
         self.memory["episodic"].store_episode(
             event=thought.content,
@@ -109,23 +164,68 @@ class ThinkingBrain:
             outcome=reasoning_result.get("conclusion"),
         )
 
+        # 5. Qərar
         decision = self.action.decide(
-            reasoning_result=reasoning_result, goal=goal,
+            reasoning_result=reasoning_result,
+            goal=self.state.current_goal,
             working_memory=self.state.working_memory,
         )
+        self.state.last_decision = decision
 
         result = {
             "cycle": self.state.cycle_count,
             "input_summary": thought.content,
             "modality": thought.modality,
-            "reasoning_mode": reasoning_mode,
+            "reasoning_mode": selected_mode,
             "trace": self.state.last_reasoning_trace,
             "conclusion": reasoning_result.get("conclusion"),
             "decision": decision,
-            "confidence": reasoning_result.get("confidence", 0.0),
+            "confidence": float(reasoning_result.get("confidence", 0.0)),
+            "memories_used": len(relevant),
         }
-        logger.info(f"[Brain Cycle {self.state.cycle_count}] Finished. Confidence={result['confidence']:.3f}")
+
+        logger.info(
+            f"[Brain Cycle {self.state.cycle_count}] Finished | "
+            f"mode={selected_mode} | confidence={result['confidence']:.3f} | "
+            f"action={decision.get('action')}"
+        )
         return result
+
+    def _select_mode(self, mode: str, thought: Thought, goal: Optional[str]) -> str:
+        """Auto rejimində ən uyğun reasoning strategiyasını seç."""
+        mode = (mode or "auto").lower().strip()
+        if mode in ("cot", "tot", "sot"):
+            return mode
+
+        # Auto seçim məntiqi
+        text = thought.content.lower()
+        word_count = len(text.split())
+
+        # Uzun / struktur tələb edən suallar → Skeleton-of-Thought
+        if word_count > 40 or any(
+            k in text for k in ("plan", "addım", "struktur", "mərhələ", "necə qur", "architect")
+        ):
+            return "sot"
+
+        # Müqayisə / alternativ / yaradıcı → Tree-of-Thoughts
+        if any(
+            k in text
+            for k in (
+                "müqayisə",
+                "alternativ",
+                "yaxşı",
+                "pis",
+                "seç",
+                "hansı",
+                "yaradıcı",
+                "vs",
+                "yoxsa",
+            )
+        ):
+            return "tot"
+
+        # Sadə və birbaşa suallar → Chain-of-Thought
+        return "cot"
 
     def _retrieve_relevant_memories(self, thought: Thought, top_k: int = 5) -> List[str]:
         short = self.memory["short_term"].retrieve(top_k=top_k)
@@ -133,28 +233,50 @@ class ThinkingBrain:
         episodic = self.memory["episodic"].retrieve(query=thought.content, top_k=3)
         return short + long_ + episodic
 
-    def _select_reasoner(self, mode: str):
-        mode = mode.lower()
-        if mode == "auto":
-            return self.reasoning["cot"]
-        return self.reasoning.get(mode, self.reasoning["cot"])
-
-    def set_goal(self, goal: str) -> None:
+    # ------------------------------------------------------------------
+    # Köməkçi metodlar
+    # ------------------------------------------------------------------
+    def set_goal(self, goal: str) -> List[str]:
+        """Yeni məqsəd təyin et və plan yarat."""
         self.state.current_goal = goal
-        self.state.active_plan = self.reasoning["planner"].create_plan(goal)
+        plan = self.reasoning["planner"].create_plan(goal)
+        self.state.active_plan = plan
         logger.info(f"New goal set: {goal}")
+        return plan
+
+    def remember(self, key: str, value: Any, metadata: Optional[Dict] = None) -> str:
+        """Uzunmüddətli yaddaşa məlumat yaz."""
+        return self.memory["long_term"].store(key, value, metadata)
+
+    def recall(self, query: str, top_k: int = 5) -> List[str]:
+        """Uzunmüddətli yaddaşdan axtar."""
+        return self.memory["long_term"].retrieve(query, top_k=top_k)
 
     def get_state(self) -> Dict[str, Any]:
+        """Cari beyin vəziyyətini qaytar."""
         return {
             "name": self.name,
             "cycle_count": self.state.cycle_count,
             "current_goal": self.state.current_goal,
             "working_memory_size": len(self.state.working_memory),
             "active_plan": self.state.active_plan,
-            "last_trace": self.state.last_reasoning_trace[-5:] if self.state.last_reasoning_trace else [],
+            "last_trace": self.state.last_reasoning_trace[-5:]
+            if self.state.last_reasoning_trace
+            else [],
+            "last_decision": self.state.last_decision,
         }
 
-    def reset(self) -> None:
+    def reset(self, clear_long_term: bool = False) -> None:
+        """İş yaddaşı və vəziyyəti sıfırla."""
         self.state = BrainState()
         self.memory["short_term"].clear()
+        self.memory["episodic"].clear()
+        if clear_long_term:
+            self.memory["long_term"].clear()
         logger.info("ThinkingBrain state reset.")
+
+    def __repr__(self) -> str:
+        return (
+            f"ThinkingBrain(name={self.name!r}, cycles={self.state.cycle_count}, "
+            f"goal={self.state.current_goal!r})"
+        )
