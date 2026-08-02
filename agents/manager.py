@@ -1,4 +1,4 @@
-"""Agent Manager – bütün agent tiplərinin qeydiyyatı."""
+"""Agent Manager."""
 
 from __future__ import annotations
 
@@ -25,11 +25,7 @@ class AgentManager:
         cls = self._registry[type_name]
         agent = cls(name=name or type_name, **kwargs)
         self._agents[agent.id] = agent
-        event_bus.publish(
-            "AgentCreated",
-            {"agent_id": agent.id, "type": type_name, "name": agent.name},
-            source="agents",
-        )
+        event_bus.publish("AgentCreated", {"agent_id": agent.id, "type": type_name, "name": agent.name}, source="agents")
         return agent
 
     def get(self, agent_id: str) -> Optional[BaseAgent]:
@@ -48,11 +44,7 @@ class AgentManager:
         agent.start()
         try:
             result = agent.run(task, context)
-            event_bus.publish(
-                "AgentTaskCompleted",
-                {"agent_id": agent_id, "success": result.success},
-                source="agents",
-            )
+            event_bus.publish("AgentTaskCompleted", {"agent_id": agent_id, "success": result.success}, source="agents")
             return result
         finally:
             agent.stop()
@@ -76,26 +68,29 @@ def _register_defaults():
     agent_manager.register_type("research", ResearchAgent)
     agent_manager.register_type("executor", ExecutorAgent)
 
-    try:
-        from agents.vision_agent import VisionAgent
-        agent_manager.register_type("vision", VisionAgent)
-    except ImportError:
-        pass
-    try:
-        from agents.voice_agent import VoiceAgent
-        agent_manager.register_type("voice", VoiceAgent)
-    except ImportError:
-        pass
-    try:
-        from agents.react_agent import ReActAgent
-        agent_manager.register_type("react", ReActAgent)
-    except ImportError:
-        pass
-    try:
-        from agents.pev import PEVAgent
-        agent_manager.register_type("pev", PEVAgent)
-    except ImportError:
-        pass
+    for mod, name in [
+        ("agents.vision_agent", "vision"),
+        ("agents.voice_agent", "voice"),
+        ("agents.react_agent", "react"),
+        ("agents.pev", "pev"),
+        ("agents.reflexion", "reflexion"),
+    ]:
+        try:
+            import importlib
+            m = importlib.import_module(mod)
+            cls_name = "".join(p.capitalize() for p in name.split("_")) + "Agent"
+            # map special cases
+            mapping = {
+                "vision": "VisionAgent",
+                "voice": "VoiceAgent",
+                "react": "ReActAgent",
+                "pev": "PEVAgent",
+                "reflexion": "ReflexionAgent",
+            }
+            cls = getattr(m, mapping[name])
+            agent_manager.register_type(name, cls)
+        except Exception:
+            pass
 
 
 _register_defaults()

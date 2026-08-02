@@ -1,12 +1,10 @@
 """
-Brain Orchestrator – ThinkingBrain, Memory, Knowledge və Agent-ləri əlaqələndirir.
-
-Mövcud core.Brain ilə geriyə uyğun qalır, əlavə olaraq tam kognitiv dövrə təqdim edir.
+Brain Orchestrator – think + agents + memory + HITL + checkpoints.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from core.logger import logger
 from core.event_bus import event_bus
@@ -14,8 +12,6 @@ from brain.core import Brain
 
 
 class Orchestrator:
-    """Minimal (köhnə) orchestrator – geriyə uyğunluq."""
-
     def __init__(self, brain: Brain):
         self.brain = brain
 
@@ -27,11 +23,12 @@ class BrainOrchestrator:
     """
     Tam kognitiv orchestrator.
 
-    Axın:
-      input → ThinkingBrain.think
-            → (opsional) Agent icrası
-            → Memory/Knowledge yeniləmə
-            → Event publish
+    Dəstək:
+    - ThinkingBrain
+    - Agent / Crew
+    - Session + Archival memory
+    - Checkpoint
+    - Human-in-the-loop (callback)
     """
 
     def __init__(self, brain_name: str = "ZenthonBrain"):
@@ -41,7 +38,28 @@ class BrainOrchestrator:
         self._agent_manager = None
         self._memory_manager = None
         self._knowledge = None
+        self._session = None
+        self._archival = None
+        self._hitl: Optional[Callable[[Dict], bool]] = None
         logger.info("BrainOrchestrator ready.")
+
+    def set_hitl(self, callback: Callable[[Dict], bool]) -> None:
+        """Human-in-the-loop: callback(result) → True=continue/accept, False=reject."""
+        self._hitl = callback
+
+    @property
+    def session(self):
+        if self._session is None:
+            from memory.session import SessionMemory
+            self._session = SessionMemory()
+        return self._session
+
+    @property
+    def archival(self):
+        if self._archival is None:
+            from memory.archival import ArchivalMemory
+            self._archival = ArchivalMemory()
+        return self._archival
 
     @property
     def agents(self):
@@ -80,27 +98,41 @@ class BrainOrchestrator:
         reasoning_mode: str = "auto",
         agent_type: Optional[str] = None,
         agent_context: Optional[Dict] = None,
+        use_session: bool = True,
+        archive_result: bool = False,
+        checkpoint_name: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Tam dövrə: think → optional agent → persist.
-        """
-        # 1. Think
+        # Session context
+        query = input_data if isinstance(input_data, str) else str(input_data)
+        if use_session:
+            self.session.add("user", query)
+            sess_ctx = self.session.as_context(8)
+            if sess_ctx:
+                query_for_brain = f"Söhbət konteksti:\n{sess_ctx}\n\nCari sual: {query}"
+            else:
+                query_for_brain = query
+        else:
+            query_for_brain = query
+
+        # Archival hints
+        archival_hits = self.archival.search(query, top_k=3)
+        if archival_hits:
+            query_for_brain += "\n\nArxiv xatirələr:\n" + "\n".join(f"- {h}" for h in archival_hits)
+
+        # Think
         result = self.brain.think(
-            input_data,
+            query_for_brain,
             goal=goal,
             reasoning_mode=reasoning_mode,
             use_knowledge=True,
         )
 
-        # 2. Optional specialized agent
-        agent_result = None
+        # Agent
         if agent_type and self.agents:
             try:
                 agent = self.agents.create(agent_type)
-                task = result.get("conclusion") or str(input_data)
-                agent_result = self.agents.run(
-                    agent.id, task, context=agent_context or {}
-                )
+                task = result.get("conclusion") or query
+                agent_result = self.agents.run(agent.id, task, context=agent_context or {})
                 result["agent"] = {
                     "type": agent_type,
                     "success": agent_result.success,
@@ -108,29 +140,53 @@ class BrainOrchestrator:
                     "metadata": agent_result.metadata,
                 }
             except Exception as e:
-                logger.warning(f"Agent '{agent_type}' failed: {e}")
                 result["agent"] = {"type": agent_type, "success": False, "error": str(e)}
 
-        # 3. Persist key conclusion into platform memory
+        # HITL
+        if self._hitl:
+            accepted = self._hitl(result)
+            result["hitl_accepted"] = bool(accepted)
+            if not accepted:
+                result["decision"] = {
+                    **(result.get("decision") or {}),
+                    "action": "rejected_by_human",
+                    "message": "Human-in-the-loop rədd etdi",
+                }
+                event_bus.publish("HITLRejected", {"cycle": result.get("cycle")}, source="orchestrator")
+                return result
+
+        # Session + archival
+        if use_session and result.get("conclusion"):
+            self.session.add("assistant", str(result["conclusion"])[:1000])
+
+        if archive_result and result.get("conclusion"):
+            self.archival.store(
+                str(result["conclusion"])[:800],
+                tags=[result.get("reasoning_mode", "think")],
+                importance=float(result.get("confidence", 0.5)),
+            )
+
         if self.memory and result.get("conclusion"):
             try:
-                self.memory.remember(
-                    str(result["conclusion"])[:500],
-                    kind="vector",
-                    metadata={"cycle": result.get("cycle"), "mode": result.get("reasoning_mode")},
-                )
+                self.memory.remember(str(result["conclusion"])[:500], kind="vector")
             except Exception:
                 pass
 
-        if self.knowledge and result.get("conclusion"):
+        # Checkpoint
+        if checkpoint_name:
             try:
-                self.knowledge.facts.add(
-                    str(result["conclusion"])[:300],
-                    source="brain_orchestrator",
-                    confidence=float(result.get("confidence", 0.5)),
+                from core.checkpoint import checkpoint_store
+                cp_id = checkpoint_store.save(
+                    checkpoint_name,
+                    {
+                        "result": result,
+                        "session": self.session.history(20),
+                        "goal": goal,
+                    },
                 )
-            except Exception:
-                pass
+                result["checkpoint_id"] = cp_id
+            except Exception as e:
+                logger.warning(f"Checkpoint failed: {e}")
 
         event_bus.publish(
             "OrchestratorCycleDone",
@@ -149,5 +205,7 @@ class BrainOrchestrator:
             "brain": self.brain.get_state(),
             "agents_available": self.agents.list_types() if self.agents else [],
             "memory_stats": self.memory.stats() if self.memory else {},
+            "session_turns": len(self.session.turns),
+            "archival_count": self.archival.count(),
             "knowledge": self.knowledge.graph.stats() if self.knowledge else {},
         }
