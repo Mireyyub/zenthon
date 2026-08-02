@@ -1,7 +1,5 @@
 """
-Core Thinking Brain – dərinləşdirilmiş kognitiv nüvə.
-
-Perception → Memory/Knowledge/GraphRAG → Reasoning → Reflection → Decision
+Core Thinking Brain – kognitiv nüvə + async API.
 """
 
 from __future__ import annotations
@@ -10,6 +8,7 @@ from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass, field
 from datetime import datetime
 import uuid
+import asyncio
 
 from core.logger import logger
 from core.event_bus import event_bus
@@ -171,7 +170,6 @@ class ThinkingBrain:
             source="perception",
         )
         self._add_to_working_memory(thought)
-
         relevant = self._retrieve_full_context(thought, use_knowledge=use_knowledge)
 
         selected_mode = self._select_mode(reasoning_mode, thought, goal)
@@ -201,7 +199,6 @@ class ThinkingBrain:
 
         if allow_rethink and confidence < self.LOW_CONFIDENCE_THRESHOLD:
             alt_mode = self._pick_alternative_mode(selected_mode)
-            logger.info(f"Low conf ({confidence:.2f}) → rethink with {alt_mode}")
             alt_result = self.reasoning[alt_mode].reason(
                 query=thought.content,
                 context=relevant,
@@ -252,6 +249,21 @@ class ThinkingBrain:
             source="brain",
         )
 
+        # Async bus best-effort
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                from core.async_event_bus import async_event_bus
+                asyncio.create_task(
+                    async_event_bus.publish(
+                        "BrainCycleCompleted",
+                        {"cycle": self.state.cycle_count, "mode": selected_mode, "confidence": confidence},
+                        source="brain",
+                    )
+                )
+        except Exception:
+            pass
+
         result = {
             "cycle": self.state.cycle_count,
             "input_summary": thought.content,
@@ -267,20 +279,39 @@ class ThinkingBrain:
             "reflection": reasoning_result.get("reflection"),
             "llm_used": reasoning_result.get("llm_used", False),
         }
-
         logger.info(
-            f"[Brain Cycle {self.state.cycle_count}] END | mode={selected_mode} | "
-            f"conf={confidence:.3f} | action={decision.get('action')}"
+            f"[Brain Cycle {self.state.cycle_count}] END | mode={selected_mode} | conf={confidence:.3f}"
         )
         return result
 
+    async def athink(
+        self,
+        input_data: Union[str, Dict[str, Any], List[Any]],
+        goal: Optional[str] = None,
+        reasoning_mode: str = "auto",
+        max_steps: int = 8,
+        allow_rethink: bool = True,
+        use_knowledge: bool = True,
+    ) -> Dict[str, Any]:
+        """Async think – event loop-u bloklamır."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.think(
+                input_data,
+                goal=goal,
+                reasoning_mode=reasoning_mode,
+                max_steps=max_steps,
+                allow_rethink=allow_rethink,
+                use_knowledge=use_knowledge,
+            ),
+        )
+
     def _retrieve_full_context(self, thought: Thought, use_knowledge: bool = True) -> List[str]:
         ctx: List[str] = []
-
         ctx += self.memory["short_term"].retrieve(top_k=4)
         ctx += self.memory["long_term"].retrieve(query=thought.content, top_k=3)
         ctx += self.memory["episodic"].retrieve(query=thought.content, top_k=2)
-
         if self.memory_manager:
             try:
                 recalled = self.memory_manager.recall(thought.content, top_k=3)
@@ -293,7 +324,6 @@ class ThinkingBrain:
                         )
             except Exception:
                 pass
-
         if use_knowledge and self.knowledge:
             try:
                 kr = self.knowledge.retrieve(thought.content, top_k=3)
@@ -303,15 +333,12 @@ class ThinkingBrain:
                     ctx.append(n.get("label", str(n)))
             except Exception:
                 pass
-
-        # GraphRAG hybrid
         if use_knowledge and self.graphrag:
             try:
                 gr = self.graphrag.retrieve(thought.content, top_k=4)
                 ctx.extend(gr.get("combined", [])[:4])
             except Exception:
                 pass
-
         seen = set()
         unique = []
         for c in ctx:
@@ -358,7 +385,6 @@ class ThinkingBrain:
         plan = self.reasoning["planner"].create_plan(goal)
         self.state.active_plan = plan
         self.goals.create(goal, plan=plan)
-        logger.info(f"New goal: {goal}")
         return plan
 
     def remember(self, key: str, value: Any, metadata: Optional[Dict] = None) -> str:
@@ -394,7 +420,6 @@ class ThinkingBrain:
         self.memory["episodic"].clear()
         if clear_long_term:
             self.memory["long_term"].clear()
-        logger.info("ThinkingBrain reset.")
 
     def __repr__(self) -> str:
         return (
