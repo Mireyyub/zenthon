@@ -1,7 +1,7 @@
 """
-ThinkingBrain demo – sadə istifadə nümunəsi.
+ThinkingBrain – gücləndirilmiş demo.
 
-İşə salmaq üçün (repo kökündən):
+İşə salmaq (repo kökündən):
     python -m brain.examples.demo_think
 """
 
@@ -9,69 +9,70 @@ from brain import ThinkingBrain
 
 
 def main():
-    brain = ThinkingBrain(name="DemoBrain")
+    brain = ThinkingBrain(name="DemoBrain", enable_meta=True)
 
-    print("=" * 60)
-    print("Zenthon ThinkingBrain Demo")
-    print("=" * 60)
+    print("=" * 64)
+    print("Zenthon ThinkingBrain – Gücləndirilmiş Demo")
+    print("=" * 64)
 
-    # 1. Sadə sual (auto → cot gözlənilir)
-    print("\n[1] Sadə sual (auto mode)")
-    r1 = brain.think(
-        "Süni intellekt nədir?",
-        reasoning_mode="auto",
-    )
-    print(f"Mode     : {r1['reasoning_mode']}")
-    print(f"Confidence: {r1['confidence']}")
-    print(f"Conclusion: {r1['conclusion'][:120]}...")
-    print(f"Decision  : {r1['decision']['action']} → {r1['decision']['message']}")
+    # 1. Sadə sual
+    print("\n[1] Sadə sual (auto)")
+    r1 = brain.think("Süni intellekt nədir?", reasoning_mode="auto")
+    _print_result(r1)
 
-    # 2. Müqayisə sualı (auto → tot gözlənilir)
-    print("\n[2] Müqayisə sualı (auto mode)")
+    # 2. Müqayisə (auto → tot)
+    print("\n[2] Müqayisə sualı (auto)")
     r2 = brain.think(
-        "CNN və Transformer hansı hallarda daha yaxşıdır? Müqayisə et.",
-        goal="Düzgün seçim etmək",
+        "CNN və Transformer hansı hallarda daha yaxşıdır? Müqayisə et və seç.",
+        goal="Düzgün arxitektura seçimi",
         reasoning_mode="auto",
     )
-    print(f"Mode     : {r2['reasoning_mode']}")
-    print(f"Confidence: {r2['confidence']}")
-    print(f"Conclusion: {r2['conclusion'][:120]}...")
+    _print_result(r2)
 
-    # 3. Plan tələb edən sual (auto → sot gözlənilir)
-    print("\n[3] Plan / struktur sualı (auto mode)")
+    # 3. Plan (auto → sot)
+    print("\n[3] Plan sualı (auto)")
     r3 = brain.think(
-        "Multimodal AI sistemi qurmaq üçün addım-addım plan hazırla.",
-        goal="İşlək arxitektura çıxarmaq",
+        "Multimodal AI sistemi qurmaq üçün addım-addım plan və struktur hazırla.",
+        goal="İşlək və genişlənə bilən arxitektura",
         reasoning_mode="auto",
     )
-    print(f"Mode     : {r3['reasoning_mode']}")
-    print(f"Confidence: {r3['confidence']}")
-    print("Trace (son 4 addım):")
-    for step in r3["trace"][-4:]:
-        print(f"  • {step[:100]}")
+    _print_result(r3)
+    print("Trace (son addımlar):")
+    for step in r3["trace"][-5:]:
+        print(f"  • {step[:110]}")
 
-    # 4. Məqsəd + yaddaş
-    print("\n[4] Məqsəd təyin et + yaddaşa yaz")
-    plan = brain.set_goal("Zenthon-u production-a çıxarmaq")
+    # 4. Aşağı etimad simulyasiyası + rethink
+    print("\n[4] Məqsəd + yaddaş + vəziyyət")
+    plan = brain.set_goal("Zenthon-u production-ready etmək")
     print("Plan:")
-    for p in plan:
+    for p in plan[:5]:
         print(f"  {p}")
 
-    brain.remember("prefer_mode", "sot", metadata={"reason": "struktur lazımdır"})
-    recalled = brain.recall("prefer")
-    print(f"Yaddaşdan oxunan: {recalled}")
+    brain.remember("preferred_stack", "PyTorch + FastAPI", metadata={"importance": 0.9})
+    brain.remember("team_size", "kiçik komanda", importance=0.7)
+    print("Recall:", brain.recall("preferred"))
 
-    # 5. Vəziyyət
-    print("\n[5] Beyin vəziyyəti")
     state = brain.get_state()
-    print(f"Cycles          : {state['cycle_count']}")
-    print(f"Current goal    : {state['current_goal']}")
-    print(f"Working memory  : {state['working_memory_size']}")
-    print(f"Last decision   : {state['last_decision']['action'] if state['last_decision'] else None}")
+    print(f"\nCycles       : {state['cycle_count']}")
+    print(f"Goal         : {state['current_goal']}")
+    print(f"Uncertainty  : {state['uncertainty']}")
+    print(f"WM size      : {state['working_memory_size']}")
+    if state.get("recent_reflections"):
+        print(f"Last reflect : {state['recent_reflections'][-1][:90]}")
 
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 64)
     print("Demo bitdi.")
-    print("=" * 60)
+    print("=" * 64)
+
+
+def _print_result(r: dict):
+    print(f"  Mode        : {r['reasoning_mode']} (tried: {r.get('modes_tried')})")
+    print(f"  Confidence  : {r['confidence']}  |  Uncertainty: {r.get('uncertainty')}")
+    print(f"  Decision    : {r['decision']['action']} (risk={r['decision'].get('risk')})")
+    print(f"  Composite   : {r['decision'].get('composite_score')}")
+    print(f"  Conclusion  : {r['conclusion'][:130]}...")
+    if r.get("meta_reflection"):
+        print(f"  Reflection  : {r['meta_reflection'][:100]}")
 
 
 if __name__ == "__main__":
