@@ -1,35 +1,27 @@
 """
-FastAPI Application Module
-REST API for serving AI models using FastAPI.
+FastAPI – Model serving + ThinkingBrain /think endpoint.
 """
 
 import os
-import json
-import numpy as np
-import torch
+import time
 from typing import Optional, Dict, Any, List, Union
-from fastapi import FastAPI, HTTPException, Request, File, UploadFile
+
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 import uvicorn
 
 from core.logger import logger
 from core.config import config
-from inference.predictors.model_predictor import ModelPredictor, ImagePredictor
-from inference.explainers.lime_explainer import LIMEExplainer
 
-
-# Initialize FastAPI app
 app = FastAPI(
-    title="AI System API",
-    description="REST API for AI System - Model Serving and Inference",
-    version="1.0.0",
+    title="Zenthon AI Platform API",
+    description="Model inference + Cognitive Brain API",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -38,396 +30,173 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+MODEL_REGISTRY: Dict[str, Any] = {}
+PREDICTOR_REGISTRY: Dict[str, Any] = {}
+EXPLAINER_REGISTRY: Dict[str, Any] = {}
+_orchestrator = None
 
-# Global model registry
-MODEL_REGISTRY = {}
-PREDICTOR_REGISTRY = {}
-EXPLAINER_REGISTRY = {}
+
+def get_orchestrator():
+    global _orchestrator
+    if _orchestrator is None:
+        from brain.orchestrator import BrainOrchestrator
+        _orchestrator = BrainOrchestrator()
+    return _orchestrator
 
 
 class PredictionRequest(BaseModel):
-    """Request model for predictions."""
     model_name: str
     data: Union[List[List[float]], Dict[str, Any]]
     explain: bool = False
 
 
 class PredictionResponse(BaseModel):
-    """Response model for predictions."""
     model_name: str
     prediction: Any
     explanation: Optional[Dict[str, Any]] = None
     processing_time: float
 
 
-class ModelInfo(BaseModel):
-    """Model information model."""
-    name: str
-    type: str
-    input_shape: Optional[List[int]] = None
-    output_shape: Optional[List[int]] = None
-    description: Optional[str] = None
+class ThinkRequest(BaseModel):
+    query: str
+    goal: Optional[str] = None
+    reasoning_mode: str = "auto"
+    agent_type: Optional[str] = None
 
 
-# Load models from config
+class ThinkResponse(BaseModel):
+    cycle: int
+    reasoning_mode: str
+    confidence: float
+    conclusion: Any
+    decision: Dict[str, Any]
+    llm_used: bool = False
+    reflection: Optional[Dict[str, Any]] = None
+    agent: Optional[Dict[str, Any]] = None
+    processing_time: float
+
+
 @app.on_event("startup")
 async def startup_event():
-    """Initialize models on startup."""
-    logger.info("Starting AI System API...")
-    logger.info(f"Base directory: {config.path.base_dir}")
-    logger.info(f"Models directory: {config.path.models_dir}")
-
-    # Load any saved models from the models directory
+    logger.info("Zenthon API starting...")
     try:
-        if os.path.exists(config.path.saved_models_dir):
-            for model_file in os.listdir(config.path.saved_models_dir):
-                if model_file.endswith(".pt") or model_file.endswith(".pth"):
-                    model_name = model_file.replace(".pt", "").replace(".pth", "")
-                    try:
-                        # Load PyTorch model
-                        model_path = os.path.join(config.path.saved_models_dir, model_file)
-                        model = torch.load(model_path, map_location="cpu")
-                        MODEL_REGISTRY[model_name] = model
-                        PREDICTOR_REGISTRY[model_name] = ModelPredictor(
-                            model=model,
-                            model_type="pytorch",
-                        )
-                        logger.info(f"Loaded model: {model_name}")
-                    except Exception as e:
-                        logger.error(f"Failed to load model {model_file}: {e}")
+        import torch
+        if os.path.exists(getattr(config.path, "saved_models_dir", "models/saved")):
+            saved_dir = config.path.saved_models_dir
+            if os.path.isdir(saved_dir):
+                for model_file in os.listdir(saved_dir):
+                    if model_file.endswith((".pt", ".pth")):
+                        name = model_file.rsplit(".", 1)[0]
+                        try:
+                            path = os.path.join(saved_dir, model_file)
+                            model = torch.load(path, map_location="cpu")
+                            MODEL_REGISTRY[name] = model
+                            from inference.predictors.model_predictor import ModelPredictor
+                            PREDICTOR_REGISTRY[name] = ModelPredictor(model=model, model_type="pytorch")
+                            logger.info(f"Loaded model: {name}")
+                        except Exception as e:
+                            logger.error(f"Load failed {model_file}: {e}")
     except Exception as e:
-        logger.error(f"Error loading models: {e}")
-
-    logger.info("AI System API started successfully")
+        logger.debug(f"Model load skip: {e}")
+    logger.info("Zenthon API ready.")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Cleanup on shutdown."""
-    logger.info("Shutting down AI System API...")
     MODEL_REGISTRY.clear()
     PREDICTOR_REGISTRY.clear()
-    EXPLAINER_REGISTRY.clear()
-    logger.info("AI System API shutdown complete")
+    logger.info("API shutdown.")
 
 
-@app.get("/", tags=["General"])
+@app.get("/")
 async def root():
-    """Root endpoint."""
     return {
-        "message": "Welcome to AI System API",
-        "version": "1.0.0",
+        "message": "Zenthon AI Platform API",
+        "version": "2.0.0",
         "docs": "/docs",
-        "health": "/health",
+        "endpoints": ["/health", "/think", "/predict", "/models", "/status"],
     }
 
 
-@app.get("/health", tags=["General"])
-async def health_check():
-    """Health check endpoint."""
+@app.get("/health")
+async def health():
     return {
         "status": "healthy",
         "models_loaded": len(MODEL_REGISTRY),
-        "predictors_loaded": len(PREDICTOR_REGISTRY),
+        "brain": "ready",
     }
 
 
-@app.get("/models", tags=["Models"], response_model=List[ModelInfo])
-async def list_models():
-    """List all available models."""
-    models = []
-    for name, model in MODEL_REGISTRY.items():
-        model_info = ModelInfo(
-            name=name,
-            type="pytorch",
-            description=f"Model {name}",
-        )
-        models.append(model_info)
-    return models
-
-
-@app.post("/register_model", tags=["Models"])
-async def register_model(
-    model_name: str,
-    model_type: str = "pytorch",
-    model_path: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    Register a new model.
-    
-    Args:
-        model_name: Name of the model.
-        model_type: Type of the model ('pytorch', 'sklearn').
-        model_path: Path to the model file.
-    """
+@app.post("/think", response_model=ThinkResponse, tags=["Brain"])
+async def think(req: ThinkRequest):
+    """Cognitive think endpoint – ThinkingBrain + optional agent."""
+    start = time.time()
     try:
-        if model_path:
-            # Load model from file
-            if model_type == "pytorch":
-                model = torch.load(model_path, map_location="cpu")
-            else:
-                import joblib
-                model = joblib.load(model_path)
-        else:
-            # For now, just store the model name
-            model = None
-
-        MODEL_REGISTRY[model_name] = model
-        PREDICTOR_REGISTRY[model_name] = ModelPredictor(
-            model=model,
-            model_type=model_type,
+        orch = get_orchestrator()
+        result = orch.run(
+            req.query,
+            goal=req.goal,
+            reasoning_mode=req.reasoning_mode,
+            agent_type=req.agent_type,
         )
-
-        logger.info(f"Registered model: {model_name}")
-        return {"status": "success", "model_name": model_name}
+        return ThinkResponse(
+            cycle=result.get("cycle", 0),
+            reasoning_mode=result.get("reasoning_mode", "auto"),
+            confidence=float(result.get("confidence", 0)),
+            conclusion=result.get("conclusion"),
+            decision=result.get("decision") or {},
+            llm_used=bool(result.get("llm_used")),
+            reflection=result.get("reflection"),
+            agent=result.get("agent"),
+            processing_time=round(time.time() - start, 3),
+        )
     except Exception as e:
-        logger.error(f"Failed to register model {model_name}: {e}")
+        logger.error(f"/think failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/predict", tags=["Prediction"], response_model=PredictionResponse)
-async def predict(request: PredictionRequest) -> PredictionResponse:
-    """
-    Make a prediction using a registered model.
-    
-    Args:
-        request: PredictionRequest containing model_name and data.
-    """
-    import time
-
-    start_time = time.time()
-
+@app.get("/status", tags=["Brain"])
+async def brain_status():
     try:
-        # Get predictor
-        if request.model_name not in PREDICTOR_REGISTRY:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Model {request.model_name} not found. Available models: {list(PREDICTOR_REGISTRY.keys())}"
-            )
+        orch = get_orchestrator()
+        return orch.status()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/models", tags=["Models"])
+async def list_models():
+    return [{"name": n, "type": "registered"} for n in MODEL_REGISTRY]
+
+
+@app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
+async def predict(request: PredictionRequest):
+    start = time.time()
+    if request.model_name not in PREDICTOR_REGISTRY:
+        raise HTTPException(404, f"Model not found: {request.model_name}")
+    try:
         predictor = PREDICTOR_REGISTRY[request.model_name]
-
-        # Make prediction
         prediction = predictor.predict(request.data)
-
-        # Generate explanation if requested
         explanation = None
         if request.explain:
-            if request.model_name in EXPLAINER_REGISTRY:
-                explainer = EXPLAINER_REGISTRY[request.model_name]
+            try:
+                from inference.explainers.lime_explainer import LIMEExplainer
+                explainer = LIMEExplainer(model=predictor.model, feature_names=None)
                 explanation = explainer.explain_instance(request.data)
-            else:
-                # Create a temporary explainer
-                explainer = LIMEExplainer(
-                    model=predictor.model,
-                    feature_names=None,
-                )
-                explanation = explainer.explain_instance(request.data)
-
-        processing_time = time.time() - start_time
-
+            except Exception:
+                explanation = {"message": "explanation unavailable"}
         return PredictionResponse(
             model_name=request.model_name,
             prediction=prediction,
             explanation=explanation,
-            processing_time=processing_time,
+            processing_time=round(time.time() - start, 3),
         )
-
     except Exception as e:
-        logger.error(f"Prediction failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(500, str(e))
 
 
-@app.post("/predict_image", tags=["Prediction"])
-async def predict_image(
-    model_name: str,
-    file: UploadFile = File(...),
-    explain: bool = False,
-) -> Dict[str, Any]:
-    """
-    Make a prediction on an image.
-    
-    Args:
-        model_name: Name of the model.
-        file: Image file to predict on.
-        explain: Whether to generate explanation.
-    """
-    import time
-    from PIL import Image
-
-    start_time = time.time()
-
-    try:
-        # Get predictor
-        if model_name not in PREDICTOR_REGISTRY:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Model {model_name} not found. Available models: {list(PREDICTOR_REGISTRY.keys())}"
-            )
-
-        predictor = PREDICTOR_REGISTRY[model_name]
-
-        # Check if it's an image predictor
-        if not isinstance(predictor, ImagePredictor):
-            # Try to convert to ImagePredictor
-            image_predictor = ImagePredictor(
-                model=predictor.model,
-                model_type=predictor.model_type,
-                device=predictor.device,
-            )
-        else:
-            image_predictor = predictor
-
-        # Read and preprocess image
-        image = Image.open(file.file)
-        image = np.array(image)
-
-        # Make prediction
-        prediction = image_predictor.predict_image(image)
-
-        # Generate explanation if requested
-        explanation = None
-        if explain:
-            # For image explanations, we'd need a specialized explainer
-            # This is a placeholder
-            explanation = {"message": "Image explanation not implemented"}
-
-        processing_time = time.time() - start_time
-
-        return {
-            "model_name": model_name,
-            "prediction": prediction,
-            "explanation": explanation,
-            "processing_time": processing_time,
-        }
-
-    except Exception as e:
-        logger.error(f"Image prediction failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/explain", tags=["Explanation"])
-async def explain(
-    model_name: str,
-    data: Union[List[List[float]], Dict[str, Any]],
-    method: str = "lime",
-) -> Dict[str, Any]:
-    """
-    Generate explanation for a prediction.
-    
-    Args:
-        model_name: Name of the model.
-        data: Input data to explain.
-        method: Explanation method ('lime', 'shap').
-    """
-    try:
-        if model_name not in MODEL_REGISTRY:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Model {model_name} not found"
-            )
-
-        model = MODEL_REGISTRY[model_name]
-
-        # Create explainer based on method
-        if method.lower() == "lime":
-            from inference.explainers.lime_explainer import LIMEExplainer
-            explainer = LIMEExplainer(model=model)
-        elif method.lower() == "shap":
-            from inference.explainers.shap_explainer import KernelSHAP
-            explainer = KernelSHAP(model=model)
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown explanation method: {method}. Use 'lime' or 'shap'."
-            )
-
-        # Generate explanation
-        explanation = explainer.explain_instance(data)
-
-        return {
-            "model_name": model_name,
-            "method": method,
-            "explanation": explanation,
-        }
-
-    except Exception as e:
-        logger.error(f"Explanation failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/register_explainer", tags=["Explanation"])
-async def register_explainer(
-    model_name: str,
-    method: str = "lime",
-    feature_names: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    """
-    Register an explainer for a model.
-    
-    Args:
-        model_name: Name of the model.
-        method: Explanation method ('lime', 'shap').
-        feature_names: Names of input features.
-    """
-    try:
-        if model_name not in MODEL_REGISTRY:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Model {model_name} not found"
-            )
-
-        model = MODEL_REGISTRY[model_name]
-
-        # Create explainer based on method
-        if method.lower() == "lime":
-            from inference.explainers.lime_explainer import LIMEExplainer
-            explainer = LIMEExplainer(
-                model=model,
-                feature_names=feature_names,
-            )
-        elif method.lower() == "shap":
-            from inference.explainers.shap_explainer import KernelSHAP
-            explainer = KernelSHAP(
-                model=model,
-                feature_names=feature_names,
-            )
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown explanation method: {method}"
-            )
-
-        EXPLAINER_REGISTRY[model_name] = explainer
-
-        logger.info(f"Registered explainer for model {model_name} using {method}")
-        return {"status": "success", "model_name": model_name, "method": method}
-
-    except Exception as e:
-        logger.error(f"Failed to register explainer: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-def run_api(
-    host: str = "0.0.0.0",
-    port: int = 8000,
-    log_level: str = "info",
-) -> None:
-    """
-    Run the FastAPI application.
-    
-    Args:
-        host: Host address.
-        port: Port number.
-        log_level: Logging level.
-    """
-    uvicorn.run(
-        "inference.api.fastapi_app:app",
-        host=host,
-        port=port,
-        log_level=log_level,
-        reload=False,
-    )
+def run_api(host: str = "0.0.0.0", port: int = 8000, log_level: str = "info") -> None:
+    uvicorn.run("inference.api.fastapi_app:app", host=host, port=port, log_level=log_level, reload=False)
 
 
 if __name__ == "__main__":
