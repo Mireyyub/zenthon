@@ -1,115 +1,147 @@
 """
-Kernel Module for AI System
-Manages system resources, dependencies, and core operations.
+Zenthon Kernel – sistemin əməliyyat mərkəzi.
+
+initialize → start → (pause/resume) → shutdown
 """
+
+from __future__ import annotations
 
 import os
 import sys
 import platform
-import psutil
-import GPUtil
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from core.config import config
 from core.logger import logger
+from core.event_bus import event_bus
+from core.scheduler import scheduler
+from core.service_registry import service_registry
+from core.lifecycle import lifecycle, SystemState
+from core.exceptions import KernelError
 
 
 class SystemKernel:
-    """Manages system resources and environment for AI operations."""
+    """Zenthon runtime kernel."""
 
     def __init__(self):
         self.config = config
+        self._initialized = False
+
+    # ------------------------------------------------------------------
+    # Lifecycle API
+    # ------------------------------------------------------------------
+    def initialize(self) -> None:
+        if self._initialized:
+            return
+        logger.info("Kernel: initialize()")
+        lifecycle.initialize()
         self._check_environment()
         self._log_system_info()
+        self._register_core_services()
+        self._initialized = True
+        logger.info("Kernel: initialized.")
+
+    def start(self) -> None:
+        if not self._initialized:
+            self.initialize()
+        logger.info("Kernel: start()")
+        scheduler.start()
+        lifecycle.start()
+
+    def pause(self) -> None:
+        lifecycle.pause()
+
+    def resume(self) -> None:
+        lifecycle.resume()
+
+    def shutdown(self) -> None:
+        logger.info("Kernel: shutdown()")
+        scheduler.stop()
+        lifecycle.shutdown()
+        self._initialized = False
+
+    def restart(self) -> None:
+        self.shutdown()
+        self.initialize()
+        self.start()
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+    def _register_core_services(self) -> None:
+        service_registry.register("event_bus", event_bus)
+        service_registry.register("scheduler", scheduler)
+        service_registry.register("lifecycle", lifecycle)
+        service_registry.register("kernel", self)
+        service_registry.register("config", config)
+        service_registry.register("logger", logger)
+
+        # Brain (lazy)
+        def _brain_factory():
+            from brain import ThinkingBrain
+            return ThinkingBrain(name="ZenthonBrain")
+
+        service_registry.register_factory("brain", _brain_factory)
+        service_registry.register_factory("llm", lambda: __import__("brain.llm", fromlist=["get_llm_client"]).get_llm_client())
 
     def _check_environment(self) -> None:
-        """Check if required dependencies are available."""
-        required_packages = [
-            "numpy",
-            "torch",
-            "pandas",
-            "scikit-learn",
-        ]
-
-        missing_packages = []
-        for package in required_packages:
+        required = ["numpy", "pandas"]
+        optional = ["torch", "scikit-learn"]
+        missing = []
+        for pkg in required:
             try:
-                __import__(package)
+                __import__(pkg)
             except ImportError:
-                missing_packages.append(package)
+                missing.append(pkg)
+        if missing:
+            logger.warning(f"Missing required packages: {missing}")
 
-        if missing_packages:
-            logger.warning(
-                f"Missing required packages: {', '.join(missing_packages)}. "
-                "Install them with: pip install " + " ".join(missing_packages)
-            )
+        for pkg in optional:
+            try:
+                __import__(pkg)
+            except ImportError:
+                logger.debug(f"Optional package not found: {pkg}")
 
     def _log_system_info(self) -> None:
-        """Log system information for debugging."""
         info = {
             "System": platform.system(),
-            "Node Name": platform.node(),
-            "Release": platform.release(),
-            "Version": platform.version(),
             "Machine": platform.machine(),
-            "Processor": platform.processor(),
-            "Python Version": sys.version,
+            "Python": sys.version.split()[0],
         }
-
-        # Memory info
-        mem = psutil.virtual_memory()
-        info["Total Memory (GB)"] = f"{mem.total / (1024 ** 3):.2f}"
-        info["Available Memory (GB)"] = f"{mem.available / (1024 ** 3):.2f}"
-
-        # GPU info
         try:
-            gpus = GPUtil.getGPUs()
-            gpu_info = [f"{gpu.id}: {gpu.name} ({gpu.memoryTotal}MB)" for gpu in gpus]
-            info["GPUs"] = ", ".join(gpu_info) if gpu_info else "None"
-        except Exception:
-            info["GPUs"] = "Not available"
-
-        logger.info("System Information:")
-        for key, value in info.items():
-            logger.info(f"  {key}: {value}")
-
-    def get_system_resources(self) -> Dict[str, Any]:
-        """Get current system resource usage."""
-        # CPU usage
-        cpu_percent = psutil.cpu_percent(interval=1)
-
-        # Memory usage
-        mem = psutil.virtual_memory()
-        mem_usage = {
-            "total": mem.total,
-            "available": mem.available,
-            "used": mem.used,
-            "percent": mem.percent,
-        }
-
-        # GPU usage
-        gpu_usage = {}
-        try:
-            gpus = GPUtil.getGPUs()
-            for gpu in gpus:
-                gpu_usage[f"gpu_{gpu.id}"] = {
-                    "name": gpu.name,
-                    "memory_total": gpu.memoryTotal,
-                    "memory_used": gpu.memoryUsed,
-                    "memory_free": gpu.memoryFree,
-                    "utilization": gpu.load * 100,
-                }
+            import psutil
+            mem = psutil.virtual_memory()
+            info["RAM_GB"] = f"{mem.total / (1024 ** 3):.1f}"
+            info["CPU_cores"] = psutil.cpu_count()
         except Exception:
             pass
+        try:
+            import torch
+            info["CUDA"] = str(torch.cuda.is_available())
+        except Exception:
+            info["CUDA"] = "n/a"
 
-        return {
-            "cpu_percent": cpu_percent,
-            "memory": mem_usage,
-            "gpu": gpu_usage,
-        }
+        logger.info("System info: " + ", ".join(f"{k}={v}" for k, v in info.items()))
+
+    # ------------------------------------------------------------------
+    # Resource helpers (backward compatible)
+    # ------------------------------------------------------------------
+    def get_system_resources(self) -> Dict[str, Any]:
+        result: Dict[str, Any] = {"state": lifecycle.get_state()}
+        try:
+            import psutil
+            mem = psutil.virtual_memory()
+            result["cpu_percent"] = psutil.cpu_percent(interval=0.3)
+            result["memory"] = {
+                "total": mem.total,
+                "available": mem.available,
+                "percent": mem.percent,
+            }
+        except Exception:
+            pass
+        return result
 
     def check_gpu_available(self) -> bool:
-        """Check if GPU is available for acceleration."""
         try:
             import torch
             return torch.cuda.is_available()
@@ -117,16 +149,22 @@ class SystemKernel:
             return False
 
     def set_device(self, device: Optional[str] = None) -> str:
-        """Set the device for computation (CPU or GPU)."""
         if device is None:
-            device = config.training.device
-
+            device = getattr(config.training, "device", "cpu")
         if device == "cuda" and not self.check_gpu_available():
             logger.warning("CUDA requested but not available. Falling back to CPU.")
             device = "cpu"
-
         return device
 
+    def status(self) -> Dict[str, Any]:
+        return {
+            "state": lifecycle.get_state(),
+            "initialized": self._initialized,
+            "services": service_registry.list_services(),
+            "tasks": scheduler.list_tasks(),
+            "resources": self.get_system_resources(),
+        }
 
-# Global kernel instance
+
+# Global kernel
 kernel = SystemKernel()
