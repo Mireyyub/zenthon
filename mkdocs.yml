@@ -1,0 +1,86 @@
+site_name: Zenthon AI System
+site_description: Suni İntellekt Platforması - Tamamilə Modullu Python Platforması
+site_author: Mireyyub
+site_url: https://github.com/Mireyyub/zenthon
+
+repo_name: Mireyyub/zenthon
+repo_url: https://github.com/Mireyyub/zenthon
+
+edit_uri: edit/main/docs/
+
+nav:
+  - Ana Səhifə: index.md
+  - Quraşdırma: installation.md
+  - İstifadə Qısa Başlanğıc: quickstart.md
+  - Arxitektura: architecture.md
+  - Modullar:
+      - Core: modules/core.md
+      - Data: modules/data.md
+      - Models: modules/models.md
+      - Training: modules/training.md
+      - Inference: modules/inference.md
+      - Interfaces: modules/interfaces.md
+      - Utils: modules/utils.md
+  - API Sənədləri: api_reference.md
+  - Nümayişlər: examples.md
+  - Testlər: testing.md
+  - Təminat və Kömək: support.md
+
+theme:
+  name: material
+  language: az
+  palette:
+    primary: deep purple
+    accent: teal
+  font:
+    text: Roboto
+    code: Fira Code
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+
+markdown_extensions:
+  - admonition
+  - codehilite:
+      guess_lang: false
+      linenums: true
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - pymdownx.emoji:
+      emoji_index: !!python/name:materialx.emoji.twemoji
+      emoji_generator: !!python/name:materialx.emoji.to_svg
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [core, data, models, training, inference, interfaces, utils]
+          options:
+            show_root_toc_entry: false
+            show_category_heading: true
+            show_bases: false
+            show_source: true
+            docstring_style: google
+  - git-revision-date-localized:
+      type: date
+      fallback_to_build_date: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Mireyyub/zenthon
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/in/mireyyub
+  
+  version:
+    provider: mike
+
+copyright: |
+  &copy; 2024 <a href="https://github.com/Mireyyub" target="_blank" rel="noopener">Mireyyub</a>

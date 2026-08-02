@@ -1,0 +1,42 @@
+name: Bug Report
+about: Xəta bildirilməsi üçün template
+labels: ["bug"]
+
+---
+
+### **Xəta Haqqında Məlumat**
+
+**Başlıq:**
+<!-- Xətanın qısaca təsviri -->
+
+**Təsvir:**
+<!-- Xətanın detallı təsviri -->
+
+---
+
+### **Reproduksiya Addımları**
+
+1. **Nə etdiydiniz?**
+   - <!-- Məsələn: `python -m interfaces.cli.main_cli train` -->
+
+2. **Nə gözləyirdiniz?**
+   - <!-- Gözlənilən nəticə -->
+
+3. **Nə baş verdi?**
+   - <!-- Əsl nəticə və ya xəta mesajı -->
+
+---
+
+### **Əlavə Məlumat**
+
+- **Python Versiyası:**
+  - <!-- `python --version` -->
+
+- **Asılılıqlar:**
+  - <!-- `pip freeze` -->
+
+- **Operasiya Sistemi:**
+  - <!-- Windows/Linux/Mac -->
+
+- **Screenshots/Logs:**
+  - <!-- Əgər varsa, əlavə edin -->

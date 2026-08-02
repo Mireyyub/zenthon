@@ -1,0 +1,60 @@
+# GitHub Labels üçün avtomatik təyinat qaydaları
+# İstifadə: PR-lərdə və ya Issues-də müəyyən fayllara görə avtomatik label təyin edilir
+
+# Maşın Öyrənməsi Modulları
+ml:
+  - models/ml/**
+  - training/trainers/supervised_trainer.py
+
+# Dərin Öyrənmə Modulları
+dl:
+  - models/dl/**
+  - training/trainers/**
+
+# Məlumat Emalı
+data:
+  - data/**
+  - utils/math/**
+
+# İnterfeyslər
+interface:
+  - interfaces/**
+
+# Testlər
+test:
+  - tests/**
+
+# Dokumentasiya
+documentation:
+  - docs/**
+  - README.md
+
+# API
+api:
+  - inference/api/**
+  - interfaces/web/**
+
+# Core Sistem
+core:
+  - core/**
+  - utils/helpers/**
+
+# Performans
+performance:
+  - tests/performance/**
+
+# Bug Fix
+bug:
+  - any: ["fix", "bug", "error", "issue"]
+
+# Enhancement
+enhancement:
+  - any: ["feat", "feature", "add", "new"]
+
+# Refactor
+refactor:
+  - any: ["refactor", "improve", "optimize"]
+
+# Documentation
+documentation:
+  - any: ["docs", "documentation", "readme"]

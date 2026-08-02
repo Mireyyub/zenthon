@@ -1,0 +1,43 @@
+name: Documentation Request
+about: Dokumentasiya təkmilləşdirməsi üçün template
+labels: ["documentation"]
+
+---
+
+### **Dokumentasiya Haqqında Məlumat**
+
+**Başlıq:**
+<!-- Məsələn: "API sənədinin əlavə edilməsi" -->
+
+**Təsvir:**
+<!-- Hansı hissənin dokumentasiyası lazımdır? -->
+
+---
+
+### **Mövcud Vəziyyət**
+
+**Hal-hazırda nə var?**
+- <!-- Məsələn: "README.md-də API haqqında heç nə yoxdur" -->
+
+---
+
+### **Tələb Olunan Dəyişiklik**
+
+**Nə əlavə edilməlidir?**
+- <!-- Məsələn: "FastAPI endpoint-lərinin siyahısı və istifadə nümunələri" -->
+
+---
+
+### **Təklif Olunan Məzmun**
+
+**Siz necə yazardınız?**
+- <!-- Əgər fikriniz varsa, nümunə verin -->
+
+---
+
+### **Əlavə Məlumat**
+
+- **Prioritet:**
+  - [ ] Yüksək (High)
+  - [ ] Orta (Medium)
+  - [ ] Aşağı (Low)

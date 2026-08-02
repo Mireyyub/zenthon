@@ -1,0 +1,47 @@
+name: Feature Request
+about: Yeni funksionallıq təklifi üçün template
+labels: ["enhancement"]
+
+---
+
+### **Funksionallıq Haqqında Məlumat**
+
+**Başlıq:**
+<!-- Yeni funksionallığın qısaca adı -->
+
+**Təsvir:**
+<!-- Detallı təsvir: nə edəcək, nə üçün lazımdır -->
+
+---
+
+### **Motivasiya**
+
+**Niyə bu funksionallıq lazımdır?**
+- <!-- Məsələn: "Hal-hazırda Y modeli dəstək olunmur, amma bizim layihədə lazımdır" -->
+
+---
+
+### **Təklif Olunan Həll**
+
+**Necə həyata keçirmək olar?**
+- <!-- Əgər fikriniz varsa, təsvir edin -->
+
+---
+
+### **Alternativlər**
+
+**Başqa variantlar varmı?**
+- <!-- Məsələn: "Bu funksionallıq A və ya B kitabxanasından istifadə edərək həyata keçirilə bilər" -->
+
+---
+
+### **Əlavə Məlumat**
+
+- **Prioritet:**
+  - [ ] Aşkar (Critical)
+  - [ ] Yüksək (High)
+  - [ ] Orta (Medium)
+  - [ ] Aşağı (Low)
+
+- **Asılılıqlar:**
+  - <!-- Əgər yeni asılılıqlar tələb olunursa -->

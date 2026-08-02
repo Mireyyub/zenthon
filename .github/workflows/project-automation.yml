@@ -1,0 +1,177 @@
+name: Project Automation
+
+on:
+  issues:
+    types: [opened, labeled, closed]
+  pull_request:
+    types: [opened, closed, ready_for_review, converted_to_draft]
+  workflow_dispatch:
+
+jobs:
+  manage-project:
+    name: Manage GitHub Project
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Add Issue to Project Board
+        if: github.event_name == 'issues' && github.event.action == 'opened'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: projects } = await github.rest.projects.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            
+            const project = projects.find(p => p.name === 'Zenthon AI Development');
+            if (!project) {
+              console.log('Project not found');
+              return;
+            }
+            
+            const { data: columns } = await github.rest.projects.listColumns({
+              project_id: project.id,
+            });
+            
+            const todoColumn = columns.find(c => c.name === 'To Do');
+            if (!todoColumn) {
+              console.log('To Do column not found');
+              return;
+            }
+            
+            await github.rest.projects.createCard({
+              column_id: todoColumn.id,
+              content_id: context.issue.number,
+              content_type: 'Issue',
+            });
+            
+            console.log(`Added issue #${context.issue.number} to project`);
+
+      - name: Move Issue to In Progress
+        if: github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'in-progress'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: projects } = await github.rest.projects.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            
+            const project = projects.find(p => p.name === 'Zenthon AI Development');
+            if (!project) {
+              console.log('Project not found');
+              return;
+            }
+            
+            const { data: columns } = await github.rest.projects.listColumns({
+              project_id: project.id,
+            });
+            
+            const todoColumn = columns.find(c => c.name === 'To Do');
+            const inProgressColumn = columns.find(c => c.name === 'In Progress');
+            
+            if (!todoColumn || !inProgressColumn) {
+              console.log('Required columns not found');
+              return;
+            }
+            
+            const { data: cards } = await github.rest.projects.listCards({
+              column_id: todoColumn.id,
+            });
+            
+            const card = cards.find(c => c.content_id == context.issue.number);
+            if (!card) {
+              console.log('Card not found in To Do column');
+              return;
+            }
+            
+            await github.rest.projects.moveCard({
+              card_id: card.id,
+              position: 'top',
+              column_id: inProgressColumn.id,
+            });
+            
+            console.log(`Moved issue #${context.issue.number} to In Progress`);
+
+      - name: Move Issue to Done
+        if: github.event_name == 'issues' && github.event.action == 'closed'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: projects } = await github.rest.projects.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            
+            const project = projects.find(p => p.name === 'Zenthon AI Development');
+            if (!project) {
+              console.log('Project not found');
+              return;
+            }
+            
+            const { data: columns } = await github.rest.projects.listColumns({
+              project_id: project.id,
+            });
+            
+            const inProgressColumn = columns.find(c => c.name === 'In Progress');
+            const doneColumn = columns.find(c => c.name === 'Done');
+            
+            if (!inProgressColumn || !doneColumn) {
+              console.log('Required columns not found');
+              return;
+            }
+            
+            const { data: cards } = await github.rest.projects.listCards({
+              column_id: inProgressColumn.id,
+            });
+            
+            const card = cards.find(c => c.content_id == context.issue.number);
+            if (!card) {
+              console.log('Card not found in In Progress column');
+              return;
+            }
+            
+            await github.rest.projects.moveCard({
+              card_id: card.id,
+              position: 'top',
+              column_id: doneColumn.id,
+            });
+            
+            console.log(`Moved issue #${context.issue.number} to Done`);
+
+      - name: Add PR to Project Board
+        if: github.event_name == 'pull_request' && github.event.action == 'opened'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: projects } = await github.rest.projects.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            
+            const project = projects.find(p => p.name === 'Zenthon AI Development');
+            if (!project) {
+              console.log('Project not found');
+              return;
+            }
+            
+            const { data: columns } = await github.rest.projects.listColumns({
+              project_id: project.id,
+            });
+            
+            const reviewColumn = columns.find(c => c.name === 'Review');
+            if (!reviewColumn) {
+              console.log('Review column not found');
+              return;
+            }
+            
+            await github.rest.projects.createCard({
+              column_id: reviewColumn.id,
+              content_id: context.payload.pull_request.number,
+              content_type: 'PullRequest',
+            });
+            
+            console.log(`Added PR #${context.payload.pull_request.number} to project`);
