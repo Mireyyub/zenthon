@@ -1,21 +1,27 @@
 # Leon AI Platform
 
-**Modul əsaslı, yaddaşlı, agent əsaslı, lokal LLM dəstəkli kognitiv süni intellekt — Leon.**
-
+**Modul əsaslı kognitiv AI — yaddaş, curriculum, reasoning, agent, lokal LLM.**  
 Repo: https://github.com/Mireyyub/zenthon
+
+> Reallıq: bu **v0.x prototipdir**. Production AGI deyil. Aşağıdakılar **kodda olan** imkanlardır.
 
 ---
 
-## Nədir?
+## İşlək imkanlar (Faza 0–8)
 
-**Leon** sadəcə ML train/predict aləti deyil. Üzərində:
-
-- **ThinkingBrain** – perception → memory/knowledge/GraphRAG → reasoning (CoT/ToT/SoT) → reflection → decision
-- **Agent sistemi** – coding, research, executor, vision, voice, ReAct, PEV, Reflexion, multi-agent Crew
-- **Memory qatları** – working, session, archival, vector, semantic, episodic
-- **Knowledge + GraphRAG** – faktlar, qraf, hybrid retrieval
-- **Lokal LLM** – Ollama (default), OpenAI / xAI / Groq uyğunluğu
-- **ML/DL stack** – sklearn + PyTorch modellər, training, LIME/SHAP, FastAPI
+| Sahə | Status |
+|------|--------|
+| Config + `data/leon/` persist | ✅ |
+| FactStore / Graph / Learning / Vector disk | ✅ |
+| Curriculum Volume 01–02 + eval | ✅ |
+| ReasoningEngine (evidence, conflict, trace) | ✅ |
+| Memory retrieve + promotion | ✅ |
+| Production agents: `react`, `coding` (sandbox) | ✅ |
+| Planner (create/run/replan) | ✅ |
+| CLI + FastAPI + GUI (Think/Teach/Status) | ✅ |
+| Omniverse bridge (stub/live) | ✅ |
+| Experimental agents (vision/voice/…) | ⚠️ experimental |
+| Full multimodal / AGI | ❌ iddia yoxdur |
 
 ---
 
@@ -24,198 +30,111 @@ Repo: https://github.com/Mireyyub/zenthon
 ```bash
 git clone https://github.com/Mireyyub/zenthon.git
 cd zenthon
-python -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
-# Lokal LLM (tövsiyə)
-ollama serve
-ollama pull llama3.2
+# optional local LLM
+ollama serve && ollama pull llama3.2
 
-# Platform bootstrap
 python zenthon_app.py
-
-# CLI think
-python -m interfaces.cli.main_cli think "Leon kimdir?" --mode auto
-
-# API
-python -m inference.api.fastapi_app
-# POST http://localhost:8000/think
-
-# GUI
-python -m interfaces.gui.main_gui
+python -m interfaces.cli.main_cli start
+python -m interfaces.cli.main_cli teach-volume 01
+python -m interfaces.cli.main_cli reason "Daş mövcuddurmu?"
+python -m interfaces.cli.main_cli health
 ```
 
----
-
-## Arxitektura
-
-```
-USER → Interfaces (CLI / GUI / Web / API)
-          ↓
-     BrainOrchestrator (Leon)
-          ↓
- ┌────────┼────────┐
- Reasoning  Memory  Planner
-          ↓
-    Decision Engine
-          ↓
-     Agent Manager → Tools / Models / Knowledge
-```
-
-### Əsas paketlər
-
-| Paket | Məzmun |
-|-------|--------|
-| `core/` | kernel, event_bus, async_event_bus, scheduler, registry, lifecycle, checkpoint |
-| `brain/` | ThinkingBrain (Leon), CoT/ToT/SoT, reflection, goals, orchestrator, LLM |
-| `memory/` | working, session, archival, vector, semantic, manager |
-| `knowledge/` | graph, facts, retrieval, graphrag |
-| `agents/` | coding, research, executor, vision, voice, react, pev, reflexion, crew |
-| `learning/` | feedback, evaluator, self_learning |
-| `evaluation/` | metrics, benchmark, runner |
-| `tools/` | registry, filesystem |
-| `security/` | permissions, audit, sandbox |
-| `models/` | ML + DL + ModelRouter |
-| `inference/` | predictors, explainers, FastAPI (`/think`) |
-| `interfaces/` | CLI, GUI (Brain tab), Web |
-
----
-
-## ThinkingBrain (Leon)
-
-```python
-from brain import ThinkingBrain
-
-brain = ThinkingBrain(name="Leon", enable_meta=True)
-result = brain.think(
-    "Lokal RAG necə qurulur?",
-    goal="Praktiki plan",
-    reasoning_mode="auto",  # cot | tot | sot | auto
-)
-print(result["conclusion"], result["confidence"], result["reflection"])
-
-# Async
-import asyncio
-result = asyncio.run(brain.athink("Sual"))
-```
-
-### Orchestrator
-
-```python
-from brain.orchestrator import BrainOrchestrator
-
-orch = BrainOrchestrator(brain_name="Leon")
-orch.set_hitl(lambda r: r.get("confidence", 0) >= 0.4)
-
-r = orch.run(
-    "Chatbot planı yaz",
-    goal="MVP",
-    agent_type="pev",
-    use_session=True,
-    archive_result=True,
-    checkpoint_name="chat",
-)
-```
-
-### Agentlər
-
-```python
-from agents import agent_manager, default_research_crew
-
-a = agent_manager.create("react")
-print(agent_manager.run(a.id, "Cari vaxtı al").output)
-
-crew = default_research_crew("RAG")
-print(crew.run().final)
-```
-
-Tiplər: `coding | research | executor | vision | voice | react | pev | reflexion`
-
-### Ollama
+### FastAPI
 
 ```bash
-export ZENTHON_LLM_PROVIDER=ollama   # default
-export ZENTHON_LLM_MODEL=llama3.2
+uvicorn interfaces.api.main:app --host 0.0.0.0 --port 8000
+# POST /think  GET /status  GET /health  POST /teach
 ```
 
----
-
-## CLI
-
-```bash
-python -m interfaces.cli.main_cli think "Sual" --mode sot --goal "..."
-python -m interfaces.cli.main_cli agent coding "Fibonacci yaz"
-python -m interfaces.cli.main_cli status
-```
-
-## API
-
-```bash
-python -m inference.api.fastapi_app
-```
-
-| Endpoint | Təsvir |
-|----------|--------|
-| `POST /think` | Leon kognitiv düşünmə |
-| `GET /status` | Brain / memory status |
-| `POST /predict` | ML/DL proqnoz |
-| `GET /health` | Sağlamlıq |
-| `/docs` | Swagger |
-
-## GUI
+### GUI
 
 ```bash
 python -m interfaces.gui.main_gui
+# Tabs: Think | Teach | Status
 ```
 
-Tablar: **Brain** (Leon think + mode + agent), Data, Train, Logs
+---
 
-## Evaluation
+## Arxitektura (qısa)
+
+```
+CLI / GUI / FastAPI
+        ↓
+BrainOrchestrator → ReasoningEngine
+        ↓
+Memory (working→promote) + FactStore + Graph + Curriculum
+        ↓
+Agents (react, coding) + Planner + Tools (sandbox)
+        ↓
+integrations/omniverse (optional)
+```
+
+---
+
+## Omniverse
+
+Leon NVIDIA Omniverse ilə **soft bridge** üzərindən işləyir:
+
+- Kit / `pxr` yoxdursa → **stub scene** (demo obyektlər)
+- Varsa → stage-dən prim sync
+
+```python
+from integrations.omniverse import OmniverseBridge
+
+ov = OmniverseBridge()
+print(ov.status())
+ov.load_stub_demo_scene()          # Kit olmadan
+# ov.sync_from_stage()             # Kit içində
+ov.inject_scene_facts()
+print(ov.ask_leon("Səhnədə hansı obyektlər var?"))
+```
 
 ```bash
-python -m brain.examples.demo_eval
-python -c "from evaluation import evaluate_brain; print(evaluate_brain(limit=5))"
+python -m interfaces.cli.main_cli omniverse status
+python -m interfaces.cli.main_cli omniverse demo
+python -m interfaces.cli.main_cli omniverse ask "Səhnədə neçə obyekt var?"
 ```
 
 ---
 
-## Async
-
-- `core.async_event_bus`
-- `ThinkingBrain.athink()`
-- `BrainOrchestrator.arun()`
-- FastAPI native async
-
----
-
-## Demolar
+## CLI (əsas)
 
 ```bash
-python zenthon_app.py
-python -m brain.examples.demo_think
-python -m brain.examples.demo_ollama
-python -m brain.examples.demo_agents
-python -m brain.examples.demo_deep
-python -m brain.examples.demo_eval
+python -m interfaces.cli.main_cli start [--bootstrap]
+python -m interfaces.cli.main_cli reason "..."
+python -m interfaces.cli.main_cli teach-volume 01
+python -m interfaces.cli.main_cli eval 01
+python -m interfaces.cli.main_cli retrieve "alma"
+python -m interfaces.cli.main_cli agent --list
+python -m interfaces.cli.main_cli agent react "vaxt neçədir?"
+python -m interfaces.cli.main_cli plan create --goal "öyrən" --curriculum 01
+python -m interfaces.cli.main_cli health
+python -m interfaces.cli.main_cli smoke
 ```
+
+Env: `LEON_DATA_DIR`, `LEON_LLM_MODEL`, `LEON_OLLAMA_HOST`, `LEON_EMBED_MODEL`
 
 ---
 
-## Testlər
+## Test / CI
 
 ```bash
-pytest tests/ -q
-pytest tests/unit/test_brain.py -q
+pytest tests/unit/test_facts_graph_learning.py tests/integration/test_cognitive_persist.py -q
+bash scripts/ci_eval.sh
 ```
 
 ---
 
-## Lisenziya / Əlaqə
+## Qeyd
 
-Açıq inkişaf.  
-GitHub: [Mireyyub](https://github.com/Mireyyub) · Email: mireyyub@gmail.com
+- ML (`models/`) cognitive path-dən **ayrı** optional qatdır.
+- Experimental agentlər: bax `agents/EXPERIMENTAL.md`.
+- README iddiaları kodla uyğun saxlanılır; şişirdilmir.
 
----
+GitHub: [Mireyyub](https://github.com/Mireyyub) · mireyyub@gmail.com
 
-*Leon – düşünən, yadda saxlayan, agentlərlə işləyən AI.*
+*Leon – düşünən, öyrənən, yadda saxlayan prototip.*
