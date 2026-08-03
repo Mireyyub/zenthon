@@ -1,0 +1,9 @@
+id: GENE-000004
+name: Category
+depends_on:
+  - GENE-000002
+  - GENE-000003
+enables:
+  - Taxonomy
+  - Relation
+definition: A category groups objects that share properties; membership is not identity.

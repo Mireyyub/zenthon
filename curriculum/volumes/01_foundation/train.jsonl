@@ -1,20 +1,25 @@
-{"id":"000001","instruction":"Daş mövcuddurmu?","output":"Bəli."}
-{"id":"000002","instruction":"Kvadrat dairə mövcuddurmu?","output":"Xeyr."}
-{"id":"000003","instruction":"Alma obyektdirmi?","output":"Bəli."}
-{"id":"000004","instruction":"Planet obyektdirmi?","output":"Bəli."}
-{"id":"000005","instruction":"Rəng xüsusiyyətdirmi?","output":"Bəli."}
-{"id":"000006","instruction":"Temperatur xüsusiyyətdirmi?","output":"Bəli."}
-{"id":"000007","instruction":"İnsan obyektdirmi?","output":"Bəli."}
-{"id":"000008","instruction":"Daşın rəngi ola bilərmi?","output":"Bəli."}
-{"id":"000009","instruction":"Almanın çəkisi ola bilərmi?","output":"Bəli."}
-{"id":"000010","instruction":"Pişik obyektdirmi?","output":"Bəli."}
-{"id":"000011","instruction":"Alma hansı kateqoriyaya daxildir?","output":"Meyvə."}
-{"id":"000012","instruction":"İt hansı kateqoriyaya daxildir?","output":"Məməli."}
-{"id":"000013","instruction":"Qartal hansı kateqoriyaya daxildir?","output":"Quş."}
-{"id":"000014","instruction":"Ay nə ətrafında fırlanır?","output":"Yer."}
-{"id":"000015","instruction":"Yer nə ətrafında fırlanır?","output":"Günəş."}
-{"id":"000016","instruction":"Alma quşdurmu?","output":"Xeyr."}
-{"id":"000017","instruction":"İnsan məməlidirmi?","output":"Bəli."}
-{"id":"000018","instruction":"Daş meyvədirmi?","output":"Xeyr."}
-{"id":"000019","instruction":"Pişik canlıdırmı?","output":"Bəli."}
-{"id":"000020","instruction":"Kitab insanı oxuyurmu?","output":"Xeyr. Normal haldə insan kitabı oxuyur."}
+{"id":"000001","lesson":"000001","instruction":"Daş mövcuddurmu?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["existence"],"language":"az"}
+{"id":"000002","lesson":"000001","instruction":"Kvadrat dairə mövcuddurmu?","input":"","reasoning":"","output":"Xeyr.","confidence":1.0,"tags":["existence","counter"],"language":"az"}
+{"id":"000003","lesson":"000002","instruction":"Alma obyektdirmi?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["object"],"language":"az"}
+{"id":"000004","lesson":"000002","instruction":"Planet obyektdirmi?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["object"],"language":"az"}
+{"id":"000005","lesson":"000003","instruction":"Rəng xüsusiyyətdirmi?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["property"],"language":"az"}
+{"id":"000006","lesson":"000003","instruction":"Temperatur xüsusiyyətdirmi?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["property"],"language":"az"}
+{"id":"000007","lesson":"000002","instruction":"İnsan obyektdirmi?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["object"],"language":"az"}
+{"id":"000008","lesson":"000003","instruction":"Daşın rəngi ola bilərmi?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["property"],"language":"az"}
+{"id":"000009","lesson":"000003","instruction":"Almanın çəkisi ola bilərmi?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["property"],"language":"az"}
+{"id":"000010","lesson":"000002","instruction":"Pişik obyektdirmi?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["object"],"language":"az"}
+{"id":"000011","lesson":"000004","instruction":"Alma hansı kateqoriyaya daxildir?","input":"","reasoning":"","output":"Meyvə.","confidence":1.0,"tags":["category"],"language":"az"}
+{"id":"000012","lesson":"000004","instruction":"İt hansı kateqoriyaya daxildir?","input":"","reasoning":"","output":"Məməli.","confidence":1.0,"tags":["category"],"language":"az"}
+{"id":"000013","lesson":"000004","instruction":"Qartal hansı kateqoriyaya daxildir?","input":"","reasoning":"","output":"Quş.","confidence":1.0,"tags":["category"],"language":"az"}
+{"id":"000014","lesson":"000005","instruction":"Ay nə ətrafında fırlanır?","input":"","reasoning":"","output":"Yer.","confidence":1.0,"tags":["relation"],"language":"az"}
+{"id":"000015","lesson":"000005","instruction":"Yer nə ətrafında fırlanır?","input":"","reasoning":"","output":"Günəş.","confidence":1.0,"tags":["relation"],"language":"az"}
+{"id":"000016","lesson":"000004","instruction":"Alma quşdurmu?","input":"","reasoning":"","output":"Xeyr.","confidence":1.0,"tags":["category","counter"],"language":"az"}
+{"id":"000017","lesson":"000004","instruction":"İnsan məməlidirmi?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["category"],"language":"az"}
+{"id":"000018","lesson":"000004","instruction":"Daş meyvədirmi?","input":"","reasoning":"","output":"Xeyr.","confidence":1.0,"tags":["category","counter"],"language":"az"}
+{"id":"000019","lesson":"000004","instruction":"Pişik canlıdırmı?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["category"],"language":"az"}
+{"id":"000020","lesson":"000005","instruction":"Kitab insanı oxuyurmu?","input":"","reasoning":"","output":"Xeyr. Normal haldə insan kitabı oxuyur.","confidence":1.0,"tags":["relation","counter"],"language":"az"}
+{"id":"000021","lesson":"000001","instruction":"Ay mövcuddurmu?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["existence"],"language":"az"}
+{"id":"000022","lesson":"000002","instruction":"Kompüter obyektdirmi?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["object"],"language":"az"}
+{"id":"000023","lesson":"000003","instruction":"Forma xüsusiyyətdirmi?","input":"","reasoning":"","output":"Bəli.","confidence":1.0,"tags":["property"],"language":"az"}
+{"id":"000024","lesson":"000004","instruction":"Banan hansı kateqoriyaya daxildir?","input":"","reasoning":"","output":"Meyvə.","confidence":1.0,"tags":["category"],"language":"az"}
+{"id":"000025","lesson":"000001","instruction":"Oxşarlıq eynilikdirmi?","input":"","reasoning":"","output":"Xeyr.","confidence":1.0,"tags":["rule"],"language":"az"}

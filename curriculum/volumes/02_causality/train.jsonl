@@ -1,0 +1,3 @@
+{"id":"C001","lesson":"000006","instruction":"Yağış yerin islanmasının səbəbidirmi?","output":"Bəli.","confidence":1.0,"tags":["cause"],"language":"az"}
+{"id":"C002","lesson":"000007","instruction":"Yerin islanması yağışın nəticəsidirmi?","output":"Bəli.","confidence":1.0,"tags":["effect"],"language":"az"}
+{"id":"C003","lesson":"000006","instruction":"Səbəb nəticədən əvvəl gəlirmi?","output":"Bəli.","confidence":1.0,"tags":["cause"],"language":"az"}

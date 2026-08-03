@@ -1,0 +1,8 @@
+id: GENE-000003
+name: Property
+depends_on:
+  - GENE-000002
+enables:
+  - Category
+  - Comparison
+definition: A property describes an aspect of an object (name and value).

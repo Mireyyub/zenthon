@@ -1,10 +1,12 @@
-{"question":"Mövcud olan hər şey necə adlanır?","answer":"Varlıq."}
-{"question":"Obyekt nədir?","answer":"Xüsusiyyətləri olan varlıq."}
-{"question":"Xüsusiyyət nədir?","answer":"Obyekti təsvir edən məlumat."}
-{"question":"Planet obyektdirmi?","answer":"Bəli."}
-{"question":"Kvadrat dairə mövcuddurmu?","answer":"Xeyr."}
-{"question":"İnsan hansı kateqoriyaya daxildir?","answer":"Məməli."}
-{"question":"Qartal hansı kateqoriyaya daxildir?","answer":"Quş."}
-{"question":"Ay nə ətrafında fırlanır?","answer":"Yer."}
-{"question":"Yer nə ətrafında fırlanır?","answer":"Günəş."}
-{"question":"Daş məməlidirmi?","answer":"Xeyr."}
+{"question":"Mövcud olan hər şey necə adlanır?","answer":"Varlıq.","confidence":1.0,"tags":["existence"]}
+{"question":"Obyekt nədir?","answer":"Xüsusiyyətləri olan varlıq.","confidence":1.0,"tags":["object"]}
+{"question":"Xüsusiyyət nədir?","answer":"Obyekti təsvir edən məlumat.","confidence":1.0,"tags":["property"]}
+{"question":"Planet obyektdirmi?","answer":"Bəli.","confidence":1.0,"tags":["object"]}
+{"question":"Kvadrat dairə mövcuddurmu?","answer":"Xeyr.","confidence":1.0,"tags":["existence"]}
+{"question":"İnsan hansı kateqoriyaya daxildir?","answer":"Məməli.","confidence":1.0,"tags":["category"]}
+{"question":"Qartal hansı kateqoriyaya daxildir?","answer":"Quş.","confidence":1.0,"tags":["category"]}
+{"question":"Ay nə ətrafında fırlanır?","answer":"Yer.","confidence":1.0,"tags":["relation"]}
+{"question":"Yer nə ətrafında fırlanır?","answer":"Günəş.","confidence":1.0,"tags":["relation"]}
+{"question":"Daş məməlidirmi?","answer":"Xeyr.","confidence":1.0,"tags":["category"]}
+{"question":"Alma hansı kateqoriyaya daxildir?","answer":"Meyvə.","confidence":1.0,"tags":["category"]}
+{"question":"Oxşarlıq eynilikdirmi?","answer":"Xeyr.","confidence":1.0,"tags":["rule"]}

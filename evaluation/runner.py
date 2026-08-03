@@ -1,4 +1,4 @@
-"""High-level evaluation entrypoints."""
+"""High-level evaluation entrypoints + curriculum eval (Faza 2)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from evaluation.benchmark import BenchmarkRunner, default_cases
 
 
 def evaluate_brain(limit: Optional[int] = None) -> Dict[str, Any]:
-    """ThinkingBrain üzərində default benchmark işə sal."""
     from brain import ThinkingBrain
 
     brain = ThinkingBrain(name="EvalBrain", enable_meta=True)
@@ -36,3 +35,22 @@ def evaluate_orchestrator(limit: Optional[int] = None) -> Dict[str, Any]:
 
     runner = BenchmarkRunner(default_cases())
     return runner.run(think_fn, limit=limit)
+
+
+def evaluate_curriculum(volume_id: str = "01", teach_first: bool = True) -> Dict[str, Any]:
+    """Volume eval.jsonl pass rate."""
+    from curriculum import CurriculumEngine
+
+    eng = CurriculumEngine()
+    if teach_first:
+        try:
+            eng.teach_volume(volume_id)
+        except Exception as e:
+            logger.warning(f"teach_volume before eval: {e}")
+    report = eng.run_eval(volume_id)
+    logger.info(
+        f"Curriculum eval vol={volume_id}: "
+        f"{report.get('passed')}/{report.get('total')} "
+        f"pass_rate={report.get('pass_rate')}"
+    )
+    return report

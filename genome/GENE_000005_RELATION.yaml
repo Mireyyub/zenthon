@@ -1,0 +1,8 @@
+id: GENE-000005
+name: Relation
+depends_on:
+  - GENE-000002
+enables:
+  - Reasoning
+  - GraphTraversal
+definition: A relation is a directed link between two or more entities (is_a, part_of, causes, ...).
