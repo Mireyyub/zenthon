@@ -1,17 +1,24 @@
 """
-Zenthon Brain package – Multimodal Thinking Core.
+Leon Brain – Multimodal Thinking Core.
 
-    from brain import ThinkingBrain, BrainOrchestrator
+    from brain import ThinkingBrain, BrainOrchestrator, reasoning_engine
 
-    brain = ThinkingBrain()
-    result = brain.think("Sual", reasoning_mode="auto")
-    # async:
-    result = await brain.athink("Sual")
+    # Vahid yol (Faza 3):
+    from brain.reasoning.engine import reasoning_engine
+    r = reasoning_engine.reason("Daş mövcuddurmu?")
 """
 
 from brain.core import Brain
 from brain.orchestrator import Orchestrator, BrainOrchestrator
 from brain.core_brain import ThinkingBrain
+from brain.reasoning.engine import reasoning_engine, ReasoningEngine
 
-__all__ = ["Brain", "Orchestrator", "BrainOrchestrator", "ThinkingBrain"]
-__version__ = "0.4.0"
+__all__ = [
+    "Brain",
+    "Orchestrator",
+    "BrainOrchestrator",
+    "ThinkingBrain",
+    "reasoning_engine",
+    "ReasoningEngine",
+]
+__version__ = "0.5.0"

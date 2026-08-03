@@ -1,110 +1,64 @@
 """
-Gücləndirilmiş Decision Engine.
-
-Multi-criteria qərar:
-- Confidence
-- Uncertainty
-- Goal alignment
-- Method reliability
-- Risk level
+Decision Engine — brain.confidence ilə vahid formula (Faza 3).
 """
 
 from typing import Any, Dict, List, Optional
 
 from core.logger import logger
+from brain.confidence import composite_confidence, action_from_confidence
 
 
 class DecisionEngine:
-    """Reasoning nəticəsinə əsasən ağıllı qərar verir."""
-
-    METHOD_RELIABILITY = {
-        "chain_of_thought": 0.78,
-        "tree_of_thoughts": 0.82,
-        "skeleton_of_thought": 0.85,
-        "unknown": 0.60,
-    }
-
     def decide(
         self,
         reasoning_result: Dict[str, Any],
         goal: Optional[str] = None,
         working_memory: Optional[List] = None,
         uncertainty: float = 0.0,
+        evidence_quality: Optional[float] = None,
+        source_reliability: Optional[float] = None,
     ) -> Dict[str, Any]:
-        conclusion = reasoning_result.get("conclusion", "")
+        # Artıq reasoning_engine decision veribsə — uyğunlaşdır
+        if reasoning_result.get("decision") and "action" in (reasoning_result.get("decision") or {}):
+            d = dict(reasoning_result["decision"])
+            d.setdefault("conclusion_summary", str(reasoning_result.get("conclusion") or reasoning_result.get("answer") or "")[:240])
+            d.setdefault("method_used", reasoning_result.get("reasoning_mode") or reasoning_result.get("strategy"))
+            return d
+
+        conclusion = reasoning_result.get("conclusion") or reasoning_result.get("answer") or ""
         confidence = float(reasoning_result.get("confidence", 0.0))
-        method = reasoning_result.get("method", "unknown")
-        method_rel = self.METHOD_RELIABILITY.get(method, 0.60)
+        method = reasoning_result.get("method") or reasoning_result.get("reasoning_mode") or "unknown"
+        source = reasoning_result.get("source") or "unknown"
 
-        # Composite score
-        goal_bonus = 0.08 if goal else 0.0
-        memory_bonus = 0.04 if working_memory and len(working_memory) > 2 else 0.0
-        unc_penalty = uncertainty * 0.15
-
-        composite = (
-            confidence * 0.55
-            + method_rel * 0.25
-            + goal_bonus
-            + memory_bonus
-            - unc_penalty
+        eq = evidence_quality if evidence_quality is not None else (
+            0.8 if reasoning_result.get("evidence") else 0.45
         )
-        composite = max(0.0, min(1.0, composite))
+        sr = source_reliability if source_reliability is not None else 0.7
 
-        # Action selection
-        if composite >= 0.80:
-            action = "execute"
-            message = "Yüksək etimad və sabit reasoning. Nəticəni birbaşa istifadə et."
-            priority = "high"
-            risk = "low"
-        elif composite >= 0.62:
-            action = "verify"
-            message = "Orta etimad. Əlavə yoxlama və ya ikinci perspektiv tövsiyə olunur."
-            priority = "medium"
-            risk = "medium"
-        else:
-            action = "rethink"
-            message = "Aşağı etimad / yüksək qeyri-müəyyənlik. Fərqli reasoning rejimi ilə yenidən düşün."
-            priority = "low"
-            risk = "high"
-
+        pack = composite_confidence(
+            base=confidence,
+            evidence_quality=eq,
+            source_reliability=sr,
+            consistency=0.85 if conclusion and str(conclusion) != "UNKNOWN" else 0.25,
+            method=str(source).split(":")[0] if source != "unknown" else method,
+            has_goal=goal is not None,
+            memory_hits=len(working_memory or []),
+            uncertainty=uncertainty,
+        )
+        action = action_from_confidence(pack["score"])
         decision = {
-            "action": action,
-            "message": message,
-            "priority": priority,
-            "risk": risk,
-            "confidence": round(confidence, 3),
-            "composite_score": round(composite, 3),
+            **action,
+            "confidence": pack["score"],
+            "confidence_label": pack["label"],
+            "composite_score": pack["score"],
             "uncertainty": round(uncertainty, 3),
             "method_used": method,
-            "method_reliability": method_rel,
-            "conclusion_summary": conclusion[:240],
+            "conclusion_summary": str(conclusion)[:240],
             "goal_aligned": goal is not None,
-            "suggested_next": self._suggest_next(action, method),
-            "scores": {
-                "raw_confidence": round(confidence, 3),
-                "method_reliability": method_rel,
-                "goal_bonus": goal_bonus,
-                "memory_bonus": memory_bonus,
-                "uncertainty_penalty": round(unc_penalty, 3),
-            },
+            "scores": pack.get("components") or {},
+            "composite": pack,
         }
-
         logger.info(
-            f"Decision → {action} | composite={composite:.3f} | "
-            f"conf={confidence:.3f} | risk={risk} | method={method}"
+            f"Decision → {decision['action']} | composite={pack['score']:.3f} | method={method}"
         )
         return decision
-
-    def _suggest_next(self, action: str, current_method: str) -> str:
-        if action == "execute":
-            return "Nəticəni istifadə et və ya növbəti tapşırığa keç."
-        if action == "verify":
-            return "Eyni sualı fərqli mode ilə (məs: sot və ya tot) yenidən soruş və müqayisə et."
-        alternatives = {"cot": "tot", "tot": "sot", "sot": "cot"}
-        alt = alternatives.get(
-            current_method.replace("chain_of_thought", "cot")
-            .replace("tree_of_thoughts", "tot")
-            .replace("skeleton_of_thought", "sot"),
-            "tot",
-        )
-        return f"reasoning_mode='{alt}' ilə think() çağır və nəticələri müqayisə et."

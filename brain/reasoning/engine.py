@@ -1,18 +1,39 @@
 """
-Reasoning Engine (spec 020).
+Reasoning Engine (spec 020) — LEON vahid düşüncə yolu (Faza 3).
 
-Parse → Retrieve → Rank → Infer → Validate → Confidence → Trace
+Pipeline:
+  Parse → Retrieve → Curriculum → (optional) Brain/LLM →
+  Rank/Conflict → Confidence → Decision → Trace persist
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 import uuid
 
 from core.logger import logger
 from core.event_bus import event_bus
+from core.persistence import write_json, read_json
+from brain.confidence import composite_confidence, action_from_confidence, label_confidence
+
+
+@dataclass
+class EvidenceItem:
+    kind: str  # curriculum | fact | graph | memory | llm
+    content: str
+    weight: float = 0.5
+    ref: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "content": self.content[:400],
+            "weight": self.weight,
+            "ref": self.ref,
+        }
 
 
 @dataclass
@@ -20,12 +41,18 @@ class ReasoningTrace:
     trace_id: str
     query: str
     retrieved_nodes: List[str] = field(default_factory=list)
+    evidence: List[Dict[str, Any]] = field(default_factory=list)
     rules_applied: List[str] = field(default_factory=list)
     candidate_conclusions: List[str] = field(default_factory=list)
     selected_conclusion: Optional[str] = None
     confidence: float = 0.0
+    confidence_label: str = "Unknown"
     validation: str = "ok"
     strategy: str = "deduction"
+    source: str = "unknown"
+    llm_used: bool = False
+    conflict: Optional[str] = None
+    decision: Dict[str, Any] = field(default_factory=dict)
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
@@ -33,22 +60,38 @@ class ReasoningTrace:
             "trace_id": self.trace_id,
             "query": self.query,
             "retrieved_nodes": self.retrieved_nodes,
+            "evidence": self.evidence,
             "rules_applied": self.rules_applied,
             "candidate_conclusions": self.candidate_conclusions,
             "selected_conclusion": self.selected_conclusion,
             "confidence": self.confidence,
+            "confidence_label": self.confidence_label,
             "validation": self.validation,
             "strategy": self.strategy,
+            "source": self.source,
+            "llm_used": self.llm_used,
+            "conflict": self.conflict,
+            "decision": self.decision,
             "timestamp": self.timestamp,
         }
 
 
-class ReasoningEngine:
-    """Spec 020 — justified conclusions with traces."""
+def _traces_dir() -> Path:
+    try:
+        from core.config import config
 
-    def __init__(self):
+        return Path(config.path.traces_dir)
+    except Exception:
+        return Path("data/leon/traces")
+
+
+class ReasoningEngine:
+    """Tək cognitive reasoning yolu."""
+
+    def __init__(self, persist_traces: bool = True):
         self._traces: Dict[str, ReasoningTrace] = {}
         self._brain = None
+        self.persist_traces = persist_traces
 
     def reason(
         self,
@@ -56,113 +99,234 @@ class ReasoningEngine:
         strategy: str = "auto",
         goal: Optional[str] = None,
         use_brain: bool = True,
+        reasoning_mode: Optional[str] = None,
     ) -> Dict[str, Any]:
         trace_id = "TR-" + str(uuid.uuid4())[:8]
-        retrieved = self._retrieve(request)
+        evidence: List[EvidenceItem] = []
+        candidates: List[Tuple[str, str, float]] = []  # text, source, base_conf
+
         strategy = self._pick_strategy(request, strategy)
+        retrieved = self._retrieve(request, evidence)
 
-        candidates: List[str] = []
-        confidence = 0.5
+        # 1) Curriculum (highest priority knowledge)
+        curr = self._try_curriculum(request)
+        if curr:
+            ans, src = curr
+            candidates.append((ans, src, 0.92))
+            evidence.append(
+                EvidenceItem(kind="curriculum", content=f"{src}: {ans}", weight=0.95, ref=src)
+            )
+
+        # 2) Brain / LLM only if curriculum miss or verify path
         llm_used = False
-        method = strategy
-
-        # Curriculum / train short-circuit
-        from_curriculum = self._try_curriculum(request)
-        if from_curriculum:
-            candidates.append(from_curriculum)
-            confidence = 0.92
-            method = "deduction"
-
-        if use_brain:
+        brain_method = strategy
+        if use_brain and (not candidates or reasoning_mode):
             try:
                 if self._brain is None:
                     from brain.core_brain import ThinkingBrain
-                    self._brain = ThinkingBrain(name="Leon")
-                mode = {"deduction": "cot", "induction": "tot", "abduction": "tot", "analogy": "sot"}.get(
-                    strategy, "auto"
-                )
+                    from core.config import config
+
+                    self._brain = ThinkingBrain(name=getattr(config, "ai_name", "Leon") or "Leon")
+                mode = reasoning_mode or {
+                    "deduction": "cot",
+                    "induction": "tot",
+                    "abduction": "tot",
+                    "analogy": "sot",
+                }.get(strategy, "auto")
                 result = self._brain.think(request, goal=goal, reasoning_mode=mode)
-                conclusion = str(result.get("conclusion") or "")
+                conclusion = str(result.get("conclusion") or "").strip()
                 if conclusion:
-                    candidates.append(conclusion)
-                confidence = max(confidence, float(result.get("confidence") or 0.5))
+                    candidates.append((conclusion, "llm", float(result.get("confidence") or 0.55)))
+                    evidence.append(
+                        EvidenceItem(
+                            kind="llm",
+                            content=conclusion[:300],
+                            weight=0.55,
+                            ref=result.get("reasoning_mode") or "llm",
+                        )
+                    )
                 llm_used = bool(result.get("llm_used"))
-                method = result.get("reasoning_mode") or method
+                brain_method = result.get("reasoning_mode") or brain_method
             except Exception as e:
-                logger.warning(f"ReasoningEngine brain fallback: {e}")
+                logger.warning(f"ReasoningEngine brain: {e}")
 
-        if not candidates:
-            candidates.append("UNKNOWN")
-            confidence = 0.0
+        # 3) Conflict resolution
+        selected, source, validation, conflict = self._resolve_conflict(candidates)
 
-        selected = candidates[0]
-        validation = "ok" if selected != "UNKNOWN" else "unresolved_conflict"
+        # 4) Confidence (vahid formula)
+        eq = min(1.0, 0.35 + 0.12 * len(evidence) + (0.25 if retrieved else 0))
+        src_rel = {
+            "curriculum": 0.95,
+            "train": 0.9,
+            "eval": 0.9,
+            "facts": 0.85,
+            "graph": 0.82,
+            "llm": 0.6,
+            "unknown": 0.4,
+        }.get(source.split(":")[0] if source else "unknown", 0.5)
+        consistency = 0.9 if validation == "ok" else (0.45 if validation == "conflict" else 0.2)
+        base = candidates[0][2] if candidates else 0.0
 
-        # Confidence model (spec 007)
-        conf = self._score_confidence(
-            evidence_quality=0.8 if retrieved else 0.4,
-            source_reliability=0.9 if from_curriculum else 0.6,
-            consistency=0.85 if validation == "ok" else 0.3,
-            base=confidence,
+        conf_pack = composite_confidence(
+            base=base,
+            evidence_quality=eq,
+            source_reliability=src_rel,
+            consistency=consistency,
+            method=source.split(":")[0] if source and source != "llm" else (brain_method or "unknown"),
+            has_goal=goal is not None,
+            memory_hits=len(retrieved),
+            uncertainty=0.0 if validation == "ok" else 0.4,
         )
+        conf = conf_pack["score"]
+        decision = action_from_confidence(conf)
+        decision["confidence"] = conf
+        decision["confidence_label"] = conf_pack["label"]
+        decision["composite"] = conf_pack
 
+        if selected == "UNKNOWN":
+            decision["action"] = "rethink"
+            decision["message"] = conflict or "Kifayət qədər evidence yoxdur."
+
+        method_for_trace = brain_method if llm_used else strategy
         trace = ReasoningTrace(
             trace_id=trace_id,
             query=request,
-            retrieved_nodes=retrieved[:10],
-            rules_applied=[strategy],
-            candidate_conclusions=candidates[:5],
+            retrieved_nodes=retrieved[:12],
+            evidence=[e.to_dict() for e in evidence],
+            rules_applied=[strategy, f"source={source}"],
+            candidate_conclusions=[c[0][:200] for c in candidates[:5]],
             selected_conclusion=selected,
             confidence=conf,
+            confidence_label=conf_pack["label"],
             validation=validation,
-            strategy=strategy,
+            strategy=method_for_trace,
+            source=source,
+            llm_used=llm_used,
+            conflict=conflict,
+            decision=decision,
         )
         self._traces[trace_id] = trace
+        if self.persist_traces:
+            self._save_trace(trace)
 
         event_bus.publish(
             "ReasoningCompleted",
-            {"trace_id": trace_id, "confidence": conf},
+            {"trace_id": trace_id, "confidence": conf, "source": source},
             source="reasoning_engine",
         )
 
         return {
             "answer": selected,
+            "conclusion": selected,
             "confidence": conf,
+            "confidence_label": conf_pack["label"],
             "trace_id": trace_id,
             "trace": trace.to_dict(),
+            "evidence": [e.to_dict() for e in evidence],
             "strategy": strategy,
+            "reasoning_mode": method_for_trace,
+            "source": source,
             "llm_used": llm_used,
+            "validation": validation,
+            "conflict": conflict,
+            "decision": decision,
             "memory_actions": [],
         }
 
-    def _retrieve(self, query: str) -> List[str]:
+    def _resolve_conflict(
+        self, candidates: List[Tuple[str, str, float]]
+    ) -> Tuple[str, str, str, Optional[str]]:
+        """
+        Priority: curriculum > train/eval/facts > graph > llm.
+        Eyni prioritetdə ziddiyyət → UNKNOWN.
+        """
+        if not candidates:
+            return "UNKNOWN", "unknown", "unresolved", "Heç bir namizəd yoxdur"
+
+        priority = {
+            "curriculum": 100,
+            "train": 90,
+            "eval": 90,
+            "facts": 80,
+            "graph": 70,
+            "llm": 40,
+            "unknown": 10,
+        }
+
+        def prio(src: str) -> int:
+            key = src.split(":")[0]
+            return priority.get(key, 10)
+
+        candidates_sorted = sorted(candidates, key=lambda c: (prio(c[1]), c[2]), reverse=True)
+        best = candidates_sorted[0]
+        best_text, best_src, _ = best
+
+        # conflict: another high-priority answer disagrees (bəli vs xeyr)
+        def polarity(t: str) -> Optional[str]:
+            tl = t.lower().strip()
+            if tl.startswith("bəli") or tl.startswith("yes"):
+                return "yes"
+            if tl.startswith("xeyr") or tl.startswith("no"):
+                return "no"
+            return None
+
+        best_pol = polarity(best_text)
+        for text, src, _ in candidates_sorted[1:]:
+            if prio(src) >= 80 and prio(best_src) >= 80:
+                pol = polarity(text)
+                if best_pol and pol and best_pol != pol:
+                    msg = f"Konflikt: '{best_text[:80]}' ({best_src}) vs '{text[:80]}' ({src})"
+                    return "UNKNOWN", "conflict", "conflict", msg
+
+        return best_text, best_src, "ok", None
+
+    def _retrieve(self, query: str, evidence: List[EvidenceItem]) -> List[str]:
         hits: List[str] = []
         try:
-            from knowledge import KnowledgeRetrieval
-            kr = KnowledgeRetrieval()
-            r = kr.retrieve(query, top_k=5)
-            for f in r.get("facts", [])[:5]:
-                hits.append(f["statement"] if isinstance(f, dict) else str(f))
-            for n in r.get("nodes", [])[:3]:
-                hits.append(n.get("label", str(n)))
+            from knowledge.facts import FactStore
+
+            for f in FactStore().search(query, top_k=5):
+                stmt = f.get("statement", "")
+                hits.append(stmt)
+                evidence.append(
+                    EvidenceItem(kind="fact", content=stmt, weight=0.75, ref=f.get("id", ""))
+                )
+        except Exception:
+            pass
+        try:
+            from knowledge.graph import KnowledgeGraph
+
+            kg = KnowledgeGraph()
+            for n in kg.query(query, top_k=5):
+                label = n.get("label", "")
+                hits.append(label)
+                evidence.append(
+                    EvidenceItem(kind="graph", content=label, weight=0.7, ref=n.get("id", ""))
+                )
         except Exception:
             pass
         try:
             from memory import MemoryManager
-            mem = MemoryManager()
-            recalled = mem.recall(query, top_k=3)
-            for text, _ in recalled.get("vector", [])[:3]:
+
+            recalled = MemoryManager().recall(query, top_k=3)
+            for text, score in recalled.get("vector", [])[:3]:
                 hits.append(text)
+                evidence.append(
+                    EvidenceItem(
+                        kind="memory", content=text, weight=float(score) if score else 0.5, ref="vector"
+                    )
+                )
         except Exception:
             pass
         return hits
 
-    def _try_curriculum(self, request: str) -> Optional[str]:
+    def _try_curriculum(self, request: str) -> Optional[Tuple[str, str]]:
         try:
             from curriculum import CurriculumEngine
+
             ans = CurriculumEngine().ask(request)
-            if ans.get("matched") and ans.get("answer"):
-                return str(ans["answer"])
+            if ans.get("matched") and ans.get("answer") is not None:
+                return str(ans["answer"]), str(ans.get("source") or "curriculum")
         except Exception:
             pass
         return None
@@ -171,6 +335,16 @@ class ReasoningEngine:
         s = (strategy or "auto").lower()
         if s in ("deduction", "induction", "abduction", "analogy"):
             return s
+        # map cot/tot/sot from CLI
+        if s in ("cot", "tot", "sot", "auto"):
+            low = request.lower()
+            if any(k in low for k in ("niyə", "why", "izah", "səbəb")):
+                return "abduction"
+            if any(k in low for k in ("ümumi", "pattern", "oxşar")):
+                return "induction"
+            if any(k in low for k in ("müqayisə", "analog")):
+                return "analogy"
+            return "deduction"
         low = request.lower()
         if any(k in low for k in ("niyə", "why", "izah", "səbəb")):
             return "abduction"
@@ -180,21 +354,19 @@ class ReasoningEngine:
             return "analogy"
         return "deduction"
 
-    def _score_confidence(
-        self,
-        evidence_quality: float,
-        source_reliability: float,
-        consistency: float,
-        base: float,
-    ) -> float:
-        # spec 020: evidence × source × consistency, blended with base
-        product = evidence_quality * source_reliability * consistency
-        conf = 0.5 * product + 0.5 * base
-        return round(max(0.0, min(1.0, conf)), 3)
+    def _save_trace(self, trace: ReasoningTrace) -> None:
+        try:
+            path = _traces_dir() / f"{trace.trace_id}.json"
+            write_json(path, trace.to_dict())
+        except Exception as e:
+            logger.debug(f"trace persist: {e}")
 
     def get_trace(self, trace_id: str) -> Optional[Dict[str, Any]]:
-        t = self._traces.get(trace_id)
-        return t.to_dict() if t else None
+        if trace_id in self._traces:
+            return self._traces[trace_id].to_dict()
+        path = _traces_dir() / f"{trace_id}.json"
+        data = read_json(path, default=None)
+        return data if isinstance(data, dict) else None
 
 
 reasoning_engine = ReasoningEngine()

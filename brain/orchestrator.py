@@ -1,5 +1,5 @@
 """
-Brain Orchestrator (Leon) – think + agents + memory + HITL + checkpoints + async.
+Brain Orchestrator (Leon) – Faza 3: ReasoningEngine vahid yol.
 """
 
 from __future__ import annotations
@@ -25,13 +25,23 @@ class BrainOrchestrator:
         from brain.core_brain import ThinkingBrain
 
         self.brain = ThinkingBrain(name=brain_name, enable_meta=True)
+        self.brain_name = brain_name
         self._agent_manager = None
         self._memory_manager = None
         self._knowledge = None
         self._session = None
         self._archival = None
         self._hitl: Optional[Callable[[Dict], bool]] = None
+        self._reasoning = None
         logger.info(f"BrainOrchestrator ready ({brain_name}).")
+
+    @property
+    def reasoning(self):
+        if self._reasoning is None:
+            from brain.reasoning.engine import ReasoningEngine
+
+            self._reasoning = ReasoningEngine(persist_traces=True)
+        return self._reasoning
 
     def set_hitl(self, callback: Callable[[Dict], bool]) -> None:
         self._hitl = callback
@@ -40,6 +50,7 @@ class BrainOrchestrator:
     def session(self):
         if self._session is None:
             from memory.session import SessionMemory
+
             self._session = SessionMemory()
         return self._session
 
@@ -47,6 +58,7 @@ class BrainOrchestrator:
     def archival(self):
         if self._archival is None:
             from memory.archival import ArchivalMemory
+
             self._archival = ArchivalMemory()
         return self._archival
 
@@ -55,6 +67,7 @@ class BrainOrchestrator:
         if self._agent_manager is None:
             try:
                 from agents.manager import agent_manager
+
                 self._agent_manager = agent_manager
             except Exception:
                 self._agent_manager = None
@@ -65,6 +78,7 @@ class BrainOrchestrator:
         if self._memory_manager is None:
             try:
                 from memory import MemoryManager
+
                 self._memory_manager = MemoryManager()
             except Exception:
                 self._memory_manager = None
@@ -75,6 +89,7 @@ class BrainOrchestrator:
         if self._knowledge is None:
             try:
                 from knowledge import KnowledgeRetrieval
+
                 self._knowledge = KnowledgeRetrieval()
             except Exception:
                 self._knowledge = None
@@ -90,6 +105,7 @@ class BrainOrchestrator:
         use_session: bool = True,
         archive_result: bool = False,
         checkpoint_name: Optional[str] = None,
+        use_reasoning_engine: bool = True,
     ) -> Dict[str, Any]:
         query = input_data if isinstance(input_data, str) else str(input_data)
         if use_session:
@@ -105,12 +121,50 @@ class BrainOrchestrator:
         if archival_hits:
             query_for_brain += "\n\nArxiv xatirələr:\n" + "\n".join(f"- {h}" for h in archival_hits)
 
-        result = self.brain.think(
-            query_for_brain,
-            goal=goal,
-            reasoning_mode=reasoning_mode,
-            use_knowledge=True,
-        )
+        if use_reasoning_engine:
+            # Vahid yol: ReasoningEngine (curriculum → evidence → optional brain)
+            rr = self.reasoning.reason(
+                query,  # curriculum match üçün təmiz sual
+                strategy=reasoning_mode,
+                goal=goal,
+                use_brain=True,
+                reasoning_mode=None if reasoning_mode == "auto" else reasoning_mode,
+            )
+            result = {
+                "conclusion": rr.get("answer"),
+                "answer": rr.get("answer"),
+                "confidence": rr.get("confidence"),
+                "confidence_label": rr.get("confidence_label"),
+                "reasoning_mode": rr.get("reasoning_mode"),
+                "strategy": rr.get("strategy"),
+                "llm_used": rr.get("llm_used"),
+                "decision": rr.get("decision"),
+                "evidence": rr.get("evidence"),
+                "trace_id": rr.get("trace_id"),
+                "trace": rr.get("trace"),
+                "source": rr.get("source"),
+                "validation": rr.get("validation"),
+                "conflict": rr.get("conflict"),
+                "name": self.brain_name,
+            }
+            # session context ilə LLM əlavə yalnız curriculum miss + uzun kontekst
+            if use_session and sess_ctx and rr.get("source") in (None, "unknown", "llm"):
+                try:
+                    extra = self.brain.think(
+                        query_for_brain, goal=goal, reasoning_mode=reasoning_mode, use_knowledge=True
+                    )
+                    if extra.get("conclusion") and not rr.get("answer"):
+                        result["conclusion"] = extra.get("conclusion")
+                        result["llm_used"] = True
+                except Exception:
+                    pass
+        else:
+            result = self.brain.think(
+                query_for_brain,
+                goal=goal,
+                reasoning_mode=reasoning_mode,
+                use_knowledge=True,
+            )
 
         if agent_type and self.agents:
             try:
@@ -135,7 +189,6 @@ class BrainOrchestrator:
                     "action": "rejected_by_human",
                     "message": "Human-in-the-loop rədd etdi",
                 }
-                event_bus.publish("HITLRejected", {"cycle": result.get("cycle")}, source="orchestrator")
                 return result
 
         if use_session and result.get("conclusion"):
@@ -148,7 +201,7 @@ class BrainOrchestrator:
                 importance=float(result.get("confidence", 0.5)),
             )
 
-        if self.memory and result.get("conclusion"):
+        if self.memory and result.get("conclusion") and result.get("conclusion") != "UNKNOWN":
             try:
                 self.memory.remember(str(result["conclusion"])[:500], kind="vector")
             except Exception:
@@ -169,11 +222,11 @@ class BrainOrchestrator:
         event_bus.publish(
             "OrchestratorCycleDone",
             {
-                "cycle": result.get("cycle"),
                 "mode": result.get("reasoning_mode"),
                 "confidence": result.get("confidence"),
-                "agent": agent_type,
-                "name": getattr(self.brain, "name", "Leon"),
+                "source": result.get("source"),
+                "trace_id": result.get("trace_id"),
+                "name": self.brain_name,
             },
             source="orchestrator",
         )
@@ -191,4 +244,5 @@ class BrainOrchestrator:
             "session_turns": len(self.session.turns),
             "archival_count": self.archival.count(),
             "knowledge": self.knowledge.graph.stats() if self.knowledge else {},
+            "reasoning": "ReasoningEngine",
         }
