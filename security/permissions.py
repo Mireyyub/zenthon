@@ -1,4 +1,4 @@
-"""Permission Manager – icazə idarəsi."""
+"""Permission Manager (Faza 9)."""
 
 from __future__ import annotations
 
@@ -10,14 +10,30 @@ from core.logger import logger
 
 class PermissionManager:
     def __init__(self):
-        # role → set of permissions
         self._roles: Dict[str, Set[str]] = {
             "admin": {"*"},
-            "user": {"brain.think", "memory.read", "tools.echo", "tools.get_time"},
-            "agent": {"brain.think", "memory.read", "memory.write", "tools.*"},
-            "guest": {"brain.think"},
+            "user": {
+                "brain.think",
+                "brain.reason",
+                "memory.read",
+                "curriculum.teach",
+                "tools.echo",
+                "tools.get_time",
+                "tools.list_dir",
+                "tools.read_file",
+                "tools.calc",
+                "omniverse.read",
+            },
+            "agent": {
+                "brain.think",
+                "memory.read",
+                "memory.write",
+                "tools.*",
+                "omniverse.read",
+            },
+            "guest": {"brain.think", "tools.echo", "tools.get_time"},
         }
-        self._user_roles: Dict[str, str] = {"default": "user"}
+        self._user_roles: Dict[str, str] = {"default": "user", "system": "admin", "agent": "agent"}
 
     def assign_role(self, user: str, role: str) -> None:
         if role not in self._roles:
@@ -31,7 +47,6 @@ class PermissionManager:
             return True
         if permission in perms:
             return True
-        # wildcard prefix (tools.*)
         for p in perms:
             if p.endswith(".*") and permission.startswith(p[:-1]):
                 return True
@@ -41,3 +56,6 @@ class PermissionManager:
         if not self.check(user, permission):
             logger.warning(f"Permission denied: user={user} perm={permission}")
             raise SecurityError(f"Permission denied: {permission}")
+
+
+permissions = PermissionManager()
