@@ -4,7 +4,6 @@ Leon / Zenthon Kernel – sistemin əməliyyat mərkəzi.
 
 from __future__ import annotations
 
-import os
 import sys
 import platform
 from typing import Any, Dict, Optional
@@ -14,8 +13,7 @@ from core.logger import logger
 from core.event_bus import event_bus
 from core.scheduler import scheduler
 from core.service_registry import service_registry
-from core.lifecycle import lifecycle, SystemState
-from core.exceptions import KernelError
+from core.lifecycle import lifecycle
 
 
 class SystemKernel:
@@ -27,6 +25,10 @@ class SystemKernel:
         if self._initialized:
             return
         logger.info("Kernel: initialize()")
+        try:
+            config.ensure_dirs()
+        except Exception as e:
+            logger.warning(f"Kernel: ensure_dirs failed: {e}")
         lifecycle.initialize()
         self._check_environment()
         self._log_system_info()
@@ -49,8 +51,14 @@ class SystemKernel:
 
     def shutdown(self) -> None:
         logger.info("Kernel: shutdown()")
-        scheduler.stop()
-        lifecycle.shutdown()
+        try:
+            scheduler.stop()
+        except Exception:
+            pass
+        try:
+            lifecycle.shutdown()
+        except Exception:
+            pass
         self._initialized = False
 
     def restart(self) -> None:
@@ -68,7 +76,8 @@ class SystemKernel:
 
         def _brain_factory():
             from brain import ThinkingBrain
-            return ThinkingBrain(name="Leon")
+
+            return ThinkingBrain(name=getattr(config, "ai_name", "Leon") or "Leon")
 
         service_registry.register_factory("brain", _brain_factory)
         service_registry.register_factory(
@@ -78,7 +87,7 @@ class SystemKernel:
 
     def _check_environment(self) -> None:
         required = ["numpy", "pandas"]
-        optional = ["torch", "scikit-learn"]
+        optional = ["torch", "sklearn", "httpx"]
         missing = []
         for pkg in required:
             try:
@@ -89,7 +98,7 @@ class SystemKernel:
             logger.warning(f"Missing required packages: {missing}")
         for pkg in optional:
             try:
-                __import__(pkg)
+                __import__(pkg if pkg != "sklearn" else "sklearn")
             except ImportError:
                 logger.debug(f"Optional package not found: {pkg}")
 
@@ -98,9 +107,11 @@ class SystemKernel:
             "System": platform.system(),
             "Machine": platform.machine(),
             "Python": sys.version.split()[0],
+            "leon_dir": str(config.path.leon_dir),
         }
         try:
             import psutil
+
             mem = psutil.virtual_memory()
             info["RAM_GB"] = f"{mem.total / (1024 ** 3):.1f}"
             info["CPU_cores"] = psutil.cpu_count()
@@ -108,6 +119,7 @@ class SystemKernel:
             pass
         try:
             import torch
+
             info["CUDA"] = str(torch.cuda.is_available())
         except Exception:
             info["CUDA"] = "n/a"
@@ -117,6 +129,7 @@ class SystemKernel:
         result: Dict[str, Any] = {"state": lifecycle.get_state()}
         try:
             import psutil
+
             mem = psutil.virtual_memory()
             result["cpu_percent"] = psutil.cpu_percent(interval=0.3)
             result["memory"] = {
@@ -131,6 +144,7 @@ class SystemKernel:
     def check_gpu_available(self) -> bool:
         try:
             import torch
+
             return torch.cuda.is_available()
         except Exception:
             return False
@@ -150,6 +164,8 @@ class SystemKernel:
             "services": service_registry.list_services(),
             "tasks": scheduler.list_tasks(),
             "resources": self.get_system_resources(),
+            "paths": config.path.as_dict(),
+            "llm": config.llm.as_dict(),
         }
 
 

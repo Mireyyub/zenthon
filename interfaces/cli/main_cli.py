@@ -1,5 +1,5 @@
 """
-Leon CLI – ThinkingBrain + Genesis Curriculum + ML.
+Leon CLI – start / smoke / think / curriculum / ML.
 """
 
 import argparse
@@ -8,6 +8,7 @@ import json
 
 from core.logger import logger
 from core.kernel import kernel
+from core.config import config
 
 
 def parse_args():
@@ -16,14 +17,23 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python -m interfaces.cli.main_cli teach-volume 01
-  python -m interfaces.cli.main_cli teach 000001
-  python -m interfaces.cli.main_cli volumes
-  python -m interfaces.cli.main_cli lessons
+  python -m interfaces.cli.main_cli start
+  python -m interfaces.cli.main_cli start --bootstrap
+  python -m interfaces.cli.main_cli smoke
+  python -m interfaces.cli.main_cli status
   python -m interfaces.cli.main_cli think "Obyekt nədir?"
+  python -m interfaces.cli.main_cli teach-volume 01
         """,
     )
     sub = parser.add_subparsers(dest="command")
+
+    start_p = sub.add_parser("start", help="Leon bootstrap (kernel + paths + llm check)")
+    start_p.add_argument("--bootstrap", action="store_true", help="Curriculum + genome")
+    start_p.add_argument("--volume", default="01")
+    start_p.add_argument("--no-llm-check", action="store_true")
+    start_p.add_argument("--json", action="store_true")
+
+    sub.add_parser("smoke", help="Faza 0 smoke test")
 
     think_p = sub.add_parser("think", help="Leon ThinkingBrain ilə düşün")
     think_p.add_argument("query", type=str)
@@ -42,17 +52,16 @@ Examples:
 
     teach_p = sub.add_parser("teach", help="Tək curriculum dərsini öyrət")
     teach_p.add_argument("lesson_id", nargs="?", default="000001")
-    teach_p.add_argument("--volume", default=None, help="Volume id (məs: 01)")
+    teach_p.add_argument("--volume", default=None)
     teach_p.add_argument("--json", action="store_true")
 
-    tv = sub.add_parser("teach-volume", help="Bütün cild dərslərini ardıcıllıqla öyrət")
-    tv.add_argument("volume_id", nargs="?", default="01", help="Volume id (default: 01)")
+    tv = sub.add_parser("teach-volume", help="Bütün cild dərslərini öyrət")
+    tv.add_argument("volume_id", nargs="?", default="01")
     tv.add_argument("--json", action="store_true")
 
-    sub.add_parser("volumes", help="Genesis cildlərini siyahıla")
-    sub.add_parser("lessons", help="Mövcud dərsləri siyahıla")
-
-    sub.add_parser("status", help="Platform status")
+    sub.add_parser("volumes", help="Genesis cildləri")
+    sub.add_parser("lessons", help="Dərslər")
+    sub.add_parser("status", help="Platform status (əskiklər daxil)")
     sub.add_parser("info", help="Sistem məlumatı")
     sub.add_parser("llm-check", help="LLM / Ollama yoxlaması")
 
@@ -81,10 +90,41 @@ class CLIController:
         self.models = {}
         self.predictors = {}
 
+    def cmd_start(self, args):
+        from core.bootstrap import start_leon
+
+        report = start_leon(
+            bootstrap_curriculum=args.bootstrap,
+            volume_id=args.volume,
+            check_llm=not args.no_llm_check,
+        )
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+            return
+        print(f"AI: {config.ai_name}")
+        print(f"leon_dir: {config.path.leon_dir}")
+        for step in report.get("steps") or []:
+            mark = "OK" if step.get("ok") else "FAIL"
+            extra = step.get("error") or step.get("model") or ""
+            print(f"  [{mark}] {step.get('step')} {extra}")
+        for w in report.get("warnings") or []:
+            print(f"  WARN: {w}")
+        for k, v in (report.get("services") or {}).items():
+            print(f"  service {k}: {v}")
+
+    def cmd_smoke(self):
+        from core.bootstrap import smoke_test
+
+        report = smoke_test()
+        print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+        print("SMOKE:", "PASS" if report.get("overall_ok") else "FAIL")
+        if not report.get("overall_ok"):
+            sys.exit(1)
+
     def cmd_think(self, args):
         from brain.orchestrator import BrainOrchestrator
 
-        orch = BrainOrchestrator(brain_name="Leon")
+        orch = BrainOrchestrator(brain_name=config.ai_name)
         result = orch.run(
             args.query,
             goal=args.goal,
@@ -94,7 +134,7 @@ class CLIController:
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
             return
-        print(f"AI         : Leon")
+        print(f"AI         : {config.ai_name}")
         print(f"Mode       : {result.get('reasoning_mode')}")
         print(f"Confidence : {result.get('confidence')}")
         print(f"Decision   : {result.get('decision', {}).get('action')}")
@@ -188,27 +228,26 @@ class CLIController:
         print("Taught volumes:", st.get("taught_volumes"))
 
     def cmd_status(self):
-        from brain.orchestrator import BrainOrchestrator
+        from core.bootstrap import leon_status
 
-        kernel.initialize()
-        orch = BrainOrchestrator(brain_name="Leon")
-        st = orch.status()
-        print(json.dumps(st, ensure_ascii=False, indent=2, default=str))
+        print(json.dumps(leon_status(), ensure_ascii=False, indent=2, default=str))
 
     def cmd_info(self):
         kernel.initialize()
         info = kernel.get_system_resources()
-        print("Leon System Info")
-        print(f"  State : {info.get('state')}")
-        print(f"  CPU   : {info.get('cpu_percent')}%")
+        print(f"{config.ai_name} System Info")
+        print(f"  State    : {info.get('state')}")
+        print(f"  CPU      : {info.get('cpu_percent')}%")
         mem = info.get("memory") or {}
-        print(f"  RAM   : {mem.get('percent')}%")
-        print(f"  Services: {kernel.status().get('services')}")
+        print(f"  RAM      : {mem.get('percent')}%")
+        print(f"  leon_dir : {config.path.leon_dir}")
+        print(f"  LLM      : {config.llm.provider} / {config.llm.model}")
+        print(f"  Services : {kernel.status().get('services')}")
 
     def cmd_llm_check(self):
         from brain.llm.client import get_llm_client
 
-        client = get_llm_client()
+        client = get_llm_client(force_new=True)
         report = client.health_check()
         print(json.dumps(report, ensure_ascii=False, indent=2))
         emb = client.embed("Leon AI platform test")
@@ -280,7 +319,11 @@ def main():
     args = parse_args()
     ctrl = CLIController()
     try:
-        if args.command == "think":
+        if args.command == "start":
+            ctrl.cmd_start(args)
+        elif args.command == "smoke":
+            ctrl.cmd_smoke()
+        elif args.command == "think":
             ctrl.cmd_think(args)
         elif args.command == "agent":
             ctrl.cmd_agent(args)

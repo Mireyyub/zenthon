@@ -2,11 +2,11 @@
 Unified LLM Client for Leon Brain.
 
 Ollama (lokal), OpenAI, xAI, Groq – OpenAI-compatible.
+Konfiq: core.config.LLMSettings (env: LEON_* / ZENTHON_*).
 """
 
 from __future__ import annotations
 
-import os
 import json
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
@@ -14,33 +14,9 @@ from dataclasses import dataclass
 from core.logger import logger
 
 
-PROVIDER_PRESETS = {
-    "ollama": {
-        "base_url": "http://localhost:11434/v1",
-        "api_key": "ollama",
-        "model": "llama3.2",
-    },
-    "openai": {
-        "base_url": "https://api.openai.com/v1",
-        "api_key": "",
-        "model": "gpt-4o-mini",
-    },
-    "xai": {
-        "base_url": "https://api.x.ai/v1",
-        "api_key": "",
-        "model": "grok-3",
-    },
-    "groq": {
-        "base_url": "https://api.groq.com/openai/v1",
-        "api_key": "",
-        "model": "llama-3.3-70b-versatile",
-    },
-}
-
-
 @dataclass
 class LLMConfig:
-    api_key: str = ""
+    api_key: str = "ollama"
     base_url: str = "http://localhost:11434/v1"
     model: str = "llama3.2"
     timeout: float = 120.0
@@ -51,43 +27,23 @@ class LLMConfig:
 
     @classmethod
     def from_env(cls) -> "LLMConfig":
-        provider = (
-            os.getenv("ZENTHON_LLM_PROVIDER")
-            or os.getenv("LLM_PROVIDER")
-            or "ollama"
-        ).lower().strip()
+        try:
+            from core.config import config
 
-        preset = PROVIDER_PRESETS.get(provider, PROVIDER_PRESETS["ollama"])
-
-        api_key = (
-            os.getenv("ZENTHON_LLM_API_KEY")
-            or os.getenv("OPENAI_API_KEY")
-            or os.getenv("XAI_API_KEY")
-            or os.getenv("GROQ_API_KEY")
-            or preset.get("api_key", "")
-        )
-
-        base_url = (
-            os.getenv("ZENTHON_LLM_BASE_URL")
-            or preset.get("base_url", "http://localhost:11434/v1")
-        )
-
-        model = os.getenv("ZENTHON_LLM_MODEL") or preset.get("model", "llama3.2")
-        embed_model = os.getenv("ZENTHON_EMBED_MODEL", "nomic-embed-text")
-
-        if provider == "ollama" and not api_key:
-            api_key = "ollama"
-
-        return cls(
-            api_key=api_key,
-            base_url=base_url,
-            model=model,
-            timeout=float(os.getenv("ZENTHON_LLM_TIMEOUT", "120")),
-            temperature=float(os.getenv("ZENTHON_LLM_TEMPERATURE", "0.4")),
-            max_tokens=int(os.getenv("ZENTHON_LLM_MAX_TOKENS", "1024")),
-            provider=provider,
-            embed_model=embed_model,
-        )
+            s = config.llm
+            return cls(
+                api_key=s.api_key or "ollama",
+                base_url=s.base_url,
+                model=s.model,
+                timeout=s.timeout,
+                temperature=s.temperature,
+                max_tokens=s.max_tokens,
+                provider=s.provider,
+                embed_model=s.embed_model,
+            )
+        except Exception:
+            # extreme fallback
+            return cls()
 
 
 class LLMClient:
@@ -112,7 +68,6 @@ class LLMClient:
 
         try:
             import urllib.request
-            import urllib.error
 
             url = self.config.base_url.rstrip("/") + "/chat/completions"
             payload = {
@@ -145,16 +100,11 @@ class LLMClient:
         return self.chat(messages, **kwargs)
 
     def embed(self, text: str, model: Optional[str] = None) -> Optional[List[float]]:
-        """
-        Embedding vektoru al.
-        Ollama: /api/embeddings və ya OpenAI-compatible /v1/embeddings
-        """
         try:
             import urllib.request
 
             emb_model = model or self.config.embed_model
 
-            # Ollama native embeddings endpoint (daha stabil)
             if self.config.provider == "ollama":
                 base = self.config.base_url.replace("/v1", "").rstrip("/")
                 url = f"{base}/api/embeddings"
@@ -172,10 +122,8 @@ class LLMClient:
             with urllib.request.urlopen(req, timeout=min(60.0, self.config.timeout)) as resp:
                 body = json.loads(resp.read().decode("utf-8"))
 
-            # Ollama: {"embedding": [...]}
             if "embedding" in body and isinstance(body["embedding"], list):
                 return body["embedding"]
-            # OpenAI-style: {"data": [{"embedding": [...]}]}
             data_list = body.get("data") or []
             if data_list and "embedding" in data_list[0]:
                 return data_list[0]["embedding"]
@@ -231,13 +179,13 @@ def get_llm_client(force_new: bool = False) -> LLMClient:
 
 def use_ollama(model: str = "llama3.2", host: str = "http://localhost:11434") -> LLMClient:
     global _client
-    config = LLMConfig(
+    cfg = LLMConfig(
         api_key="ollama",
         base_url=f"{host.rstrip('/')}/v1",
         model=model,
         provider="ollama",
         timeout=120.0,
     )
-    _client = LLMClient(config)
+    _client = LLMClient(cfg)
     logger.info(f"LLM provider → Ollama | model={model} | host={host}")
     return _client
