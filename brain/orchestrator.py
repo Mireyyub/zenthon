@@ -1,5 +1,5 @@
 """
-Brain Orchestrator – think + agents + memory + HITL + checkpoints + async.
+Brain Orchestrator (Leon) – think + agents + memory + HITL + checkpoints + async.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ class Orchestrator:
 
 
 class BrainOrchestrator:
-    def __init__(self, brain_name: str = "ZenthonBrain"):
+    def __init__(self, brain_name: str = "Leon"):
         from brain.core_brain import ThinkingBrain
 
         self.brain = ThinkingBrain(name=brain_name, enable_meta=True)
@@ -31,7 +31,7 @@ class BrainOrchestrator:
         self._session = None
         self._archival = None
         self._hitl: Optional[Callable[[Dict], bool]] = None
-        logger.info("BrainOrchestrator ready.")
+        logger.info(f"BrainOrchestrator ready ({brain_name}).")
 
     def set_hitl(self, callback: Callable[[Dict], bool]) -> None:
         self._hitl = callback
@@ -173,13 +173,13 @@ class BrainOrchestrator:
                 "mode": result.get("reasoning_mode"),
                 "confidence": result.get("confidence"),
                 "agent": agent_type,
+                "name": getattr(self.brain, "name", "Leon"),
             },
             source="orchestrator",
         )
         return result
 
     async def arun(self, *args, **kwargs) -> Dict[str, Any]:
-        """Async run – event loop bloklanmır."""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, lambda: self.run(*args, **kwargs))
 

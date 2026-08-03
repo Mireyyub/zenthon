@@ -1,5 +1,5 @@
 """
-FastAPI – Model serving + ThinkingBrain /think endpoint.
+FastAPI – Model serving + Leon /think endpoint.
 """
 
 import os
@@ -15,8 +15,8 @@ from core.logger import logger
 from core.config import config
 
 app = FastAPI(
-    title="Zenthon AI Platform API",
-    description="Model inference + Cognitive Brain API",
+    title="Leon AI Platform API",
+    description="Model inference + Leon Cognitive Brain API",
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -40,7 +40,7 @@ def get_orchestrator():
     global _orchestrator
     if _orchestrator is None:
         from brain.orchestrator import BrainOrchestrator
-        _orchestrator = BrainOrchestrator()
+        _orchestrator = BrainOrchestrator(brain_name="Leon")
     return _orchestrator
 
 
@@ -78,7 +78,7 @@ class ThinkResponse(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("Zenthon API starting...")
+    logger.info("Leon API starting...")
     try:
         import torch
         if os.path.exists(getattr(config.path, "saved_models_dir", "models/saved")):
@@ -98,20 +98,20 @@ async def startup_event():
                             logger.error(f"Load failed {model_file}: {e}")
     except Exception as e:
         logger.debug(f"Model load skip: {e}")
-    logger.info("Zenthon API ready.")
+    logger.info("Leon API ready.")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     MODEL_REGISTRY.clear()
     PREDICTOR_REGISTRY.clear()
-    logger.info("API shutdown.")
+    logger.info("Leon API shutdown.")
 
 
 @app.get("/")
 async def root():
     return {
-        "message": "Zenthon AI Platform API",
+        "message": "Leon AI Platform API",
         "version": "2.0.0",
         "docs": "/docs",
         "endpoints": ["/health", "/think", "/predict", "/models", "/status"],
@@ -122,6 +122,7 @@ async def root():
 async def health():
     return {
         "status": "healthy",
+        "ai": "Leon",
         "models_loaded": len(MODEL_REGISTRY),
         "brain": "ready",
     }
@@ -129,7 +130,6 @@ async def health():
 
 @app.post("/think", response_model=ThinkResponse, tags=["Brain"])
 async def think(req: ThinkRequest):
-    """Cognitive think endpoint – ThinkingBrain + optional agent."""
     start = time.time()
     try:
         orch = get_orchestrator()

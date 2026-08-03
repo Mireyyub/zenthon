@@ -1,5 +1,5 @@
 """
-Zenthon GUI – ThinkingBrain inteqrasiyalı interfeys.
+Leon GUI – ThinkingBrain inteqrasiyalı interfeys.
 """
 
 import tkinter as tk
@@ -12,10 +12,10 @@ from typing import Optional, Dict, Any
 from core.logger import logger
 
 
-class ZenthonApp:
+class LeonApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Zenthon AI Platform")
+        self.root.title("Leon AI Platform")
         self.root.geometry("1100x780")
         self._orch = None
         self.log_queue: queue.Queue = queue.Queue()
@@ -27,12 +27,12 @@ class ZenthonApp:
         self._create_notebook()
         self._create_status_bar()
         self.root.after(100, self._process_log_queue)
-        logger.info("Zenthon GUI initialized")
+        logger.info("Leon GUI initialized")
 
     def _orch_lazy(self):
         if self._orch is None:
             from brain.orchestrator import BrainOrchestrator
-            self._orch = BrainOrchestrator()
+            self._orch = BrainOrchestrator(brain_name="Leon")
         return self._orch
 
     def _configure_styles(self) -> None:
@@ -64,9 +64,9 @@ class ZenthonApp:
 
     def _create_brain_tab(self) -> None:
         frame = ttk.Frame(self.notebook)
-        self.notebook.add(frame, text="Brain")
+        self.notebook.add(frame, text="Leon")
 
-        top = ttk.LabelFrame(frame, text="ThinkingBrain")
+        top = ttk.LabelFrame(frame, text="Leon · ThinkingBrain")
         top.pack(fill=tk.X, padx=8, pady=8)
 
         ttk.Label(top, text="Sual / tapşırıq:").grid(row=0, column=0, sticky=tk.W, padx=4, pady=4)
@@ -136,7 +136,7 @@ class ZenthonApp:
         ttk.Button(frame, text="Clear", command=lambda: self.log_display.delete("1.0", tk.END)).pack(pady=4)
 
     def _create_status_bar(self) -> None:
-        self.status_bar = ttk.Label(self.root, text="Ready", relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar = ttk.Label(self.root, text="Leon Ready", relief=tk.SUNKEN, anchor=tk.W)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def _process_log_queue(self) -> None:
@@ -161,9 +161,9 @@ class ZenthonApp:
         mode = self.brain_mode.get() or "auto"
         goal = self.brain_goal.get().strip() or None
         agent = self.brain_agent.get().strip() or None
-        self._log(f"Think started | mode={mode} agent={agent or '-'}")
+        self._log(f"Leon think | mode={mode} agent={agent or '-'}")
         self.brain_output.delete("1.0", tk.END)
-        self.brain_output.insert(tk.END, "Düşünür...\n")
+        self.brain_output.insert(tk.END, "Leon düşünür...\n")
 
         def worker():
             try:
@@ -187,10 +187,10 @@ class ZenthonApp:
                 if result.get("agent"):
                     text += f"\n--- Agent ---\n{json.dumps(result['agent'], ensure_ascii=False, indent=2, default=str)}\n"
                 self.root.after(0, lambda: self._show_brain_result(text))
-                self.root.after(0, lambda: self._log("Think completed"))
+                self.root.after(0, lambda: self._log("Leon think completed"))
             except Exception as e:
                 self.root.after(0, lambda: self._show_brain_result(f"Xəta: {e}"))
-                self.root.after(0, lambda: self._log(f"Think error: {e}"))
+                self.root.after(0, lambda: self._log(f"Leon error: {e}"))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -238,8 +238,8 @@ class ZenthonApp:
 
     def _on_about(self) -> None:
         messagebox.showinfo(
-            "About Zenthon",
-            "Zenthon AI Platform\n\n"
+            "About Leon",
+            "Leon AI Platform\n\n"
             "ThinkingBrain + Agents + Memory + GraphRAG\n"
             "Ollama lokal LLM · CLI · API · GUI\n\n"
             "https://github.com/Mireyyub/zenthon",
@@ -248,7 +248,7 @@ class ZenthonApp:
 
 def run_gui():
     root = tk.Tk()
-    ZenthonApp(root)
+    LeonApp(root)
     root.mainloop()
 
 

@@ -1,6 +1,6 @@
-# Zenthon AI Platform
+# Leon AI Platform
 
-**Modul əsaslı, yaddaşlı, agent əsaslı, lokal LLM dəstəkli kognitiv süni intellekt platforması.**
+**Modul əsaslı, yaddaşlı, agent əsaslı, lokal LLM dəstəkli kognitiv süni intellekt — Leon.**
 
 Repo: https://github.com/Mireyyub/zenthon
 
@@ -8,14 +8,14 @@ Repo: https://github.com/Mireyyub/zenthon
 
 ## Nədir?
 
-Zenthon sadəcə ML train/predict aləti deyil. Üzərində:
+**Leon** sadəcə ML train/predict aləti deyil. Üzərində:
 
 - **ThinkingBrain** – perception → memory/knowledge/GraphRAG → reasoning (CoT/ToT/SoT) → reflection → decision
 - **Agent sistemi** – coding, research, executor, vision, voice, ReAct, PEV, Reflexion, multi-agent Crew
 - **Memory qatları** – working, session, archival, vector, semantic, episodic
 - **Knowledge + GraphRAG** – faktlar, qraf, hybrid retrieval
 - **Lokal LLM** – Ollama (default), OpenAI / xAI / Groq uyğunluğu
-- **Köhnə ML/DL stack** – sklearn + PyTorch modellər, training, LIME/SHAP, FastAPI
+- **ML/DL stack** – sklearn + PyTorch modellər, training, LIME/SHAP, FastAPI
 
 ---
 
@@ -36,13 +36,13 @@ ollama pull llama3.2
 python zenthon_app.py
 
 # CLI think
-python -m interfaces.cli.main_cli think "Zenthon nədir?" --mode auto
+python -m interfaces.cli.main_cli think "Leon kimdir?" --mode auto
 
 # API
 python -m inference.api.fastapi_app
 # POST http://localhost:8000/think
 
-# GUI (Brain tab daxil)
+# GUI
 python -m interfaces.gui.main_gui
 ```
 
@@ -53,7 +53,7 @@ python -m interfaces.gui.main_gui
 ```
 USER → Interfaces (CLI / GUI / Web / API)
           ↓
-     BrainOrchestrator
+     BrainOrchestrator (Leon)
           ↓
  ┌────────┼────────┐
  Reasoning  Memory  Planner
@@ -67,10 +67,10 @@ USER → Interfaces (CLI / GUI / Web / API)
 
 | Paket | Məzmun |
 |-------|--------|
-| `core/` | kernel, event_bus, **async_event_bus**, scheduler, registry, lifecycle, checkpoint |
-| `brain/` | ThinkingBrain, CoT/ToT/SoT, reflection, goals, orchestrator, LLM client |
+| `core/` | kernel, event_bus, async_event_bus, scheduler, registry, lifecycle, checkpoint |
+| `brain/` | ThinkingBrain (Leon), CoT/ToT/SoT, reflection, goals, orchestrator, LLM |
 | `memory/` | working, session, archival, vector, semantic, manager |
-| `knowledge/` | graph, facts, retrieval, **graphrag** |
+| `knowledge/` | graph, facts, retrieval, graphrag |
 | `agents/` | coding, research, executor, vision, voice, react, pev, reflexion, crew |
 | `learning/` | feedback, evaluator, self_learning |
 | `evaluation/` | metrics, benchmark, runner |
@@ -78,16 +78,16 @@ USER → Interfaces (CLI / GUI / Web / API)
 | `security/` | permissions, audit, sandbox |
 | `models/` | ML + DL + ModelRouter |
 | `inference/` | predictors, explainers, FastAPI (`/think`) |
-| `interfaces/` | CLI, **GUI (Brain tab)**, Web |
+| `interfaces/` | CLI, GUI (Brain tab), Web |
 
 ---
 
-## ThinkingBrain
+## ThinkingBrain (Leon)
 
 ```python
 from brain import ThinkingBrain
 
-brain = ThinkingBrain(enable_meta=True)
+brain = ThinkingBrain(name="Leon", enable_meta=True)
 result = brain.think(
     "Lokal RAG necə qurulur?",
     goal="Praktiki plan",
@@ -105,7 +105,7 @@ result = asyncio.run(brain.athink("Sual"))
 ```python
 from brain.orchestrator import BrainOrchestrator
 
-orch = BrainOrchestrator()
+orch = BrainOrchestrator(brain_name="Leon")
 orch.set_hitl(lambda r: r.get("confidence", 0) >= 0.4)
 
 r = orch.run(
@@ -137,7 +137,6 @@ Tiplər: `coding | research | executor | vision | voice | react | pev | reflexio
 ```bash
 export ZENTHON_LLM_PROVIDER=ollama   # default
 export ZENTHON_LLM_MODEL=llama3.2
-# və ya: mistral, phi3, qwen2.5 ...
 ```
 
 ---
@@ -145,10 +144,9 @@ export ZENTHON_LLM_MODEL=llama3.2
 ## CLI
 
 ```bash
-python -m interfaces.cli.main_cli think "Sual" --mode sot --goal "...")
+python -m interfaces.cli.main_cli think "Sual" --mode sot --goal "..."
 python -m interfaces.cli.main_cli agent coding "Fibonacci yaz"
 python -m interfaces.cli.main_cli status
-python -m interfaces.cli.main_cli train --model linear_regression --data train.csv --target y
 ```
 
 ## API
@@ -159,7 +157,7 @@ python -m inference.api.fastapi_app
 
 | Endpoint | Təsvir |
 |----------|--------|
-| `POST /think` | Kognitiv düşünmə |
+| `POST /think` | Leon kognitiv düşünmə |
 | `GET /status` | Brain / memory status |
 | `POST /predict` | ML/DL proqnoz |
 | `GET /health` | Sağlamlıq |
@@ -171,7 +169,7 @@ python -m inference.api.fastapi_app
 python -m interfaces.gui.main_gui
 ```
 
-Tablar: **Brain** (think + mode + agent), Data, Train, Predict, Explain, Logs
+Tablar: **Brain** (Leon think + mode + agent), Data, Train, Logs
 
 ## Evaluation
 
@@ -184,20 +182,10 @@ python -c "from evaluation import evaluate_brain; print(evaluate_brain(limit=5))
 
 ## Async
 
-- `core.async_event_bus` – asyncio event bus
-- `ThinkingBrain.athink()` – non-blocking think
-- `BrainOrchestrator.arun()` – async orchestrator
-- FastAPI endpoint-ləri native async
-
-```python
-from core import async_event_bus
-
-async def handler(event):
-    print(event.name, event.payload)
-
-async_event_bus.subscribe("BrainCycleCompleted", handler)
-await async_event_bus.publish("BrainCycleCompleted", {"ok": True})
-```
+- `core.async_event_bus`
+- `ThinkingBrain.athink()`
+- `BrainOrchestrator.arun()`
+- FastAPI native async
 
 ---
 
@@ -218,16 +206,16 @@ python -m brain.examples.demo_eval
 
 ```bash
 pytest tests/ -q
-pytest tests/unit/test_brain.py -q   # kognitiv testlər
+pytest tests/unit/test_brain.py -q
 ```
 
 ---
 
 ## Lisenziya / Əlaqə
 
-MIT üslubunda açıq inkişaf.  
+Açıq inkişaf.  
 GitHub: [Mireyyub](https://github.com/Mireyyub) · Email: mireyyub@gmail.com
 
 ---
 
-*Zenthon – düşünən, yadda saxlayan, agentlərlə işləyən AI platforması.*
+*Leon – düşünən, yadda saxlayan, agentlərlə işləyən AI.*

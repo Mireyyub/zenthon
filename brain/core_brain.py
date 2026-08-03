@@ -1,5 +1,5 @@
 """
-Core Thinking Brain – kognitiv nüvə + async API.
+Core Thinking Brain (Leon) – kognitiv nüvə + async API.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ class ThinkingBrain:
     MAX_WORKING_MEMORY = 40
     LOW_CONFIDENCE_THRESHOLD = 0.62
 
-    def __init__(self, name: str = "ZenthonBrain", enable_meta: bool = True):
+    def __init__(self, name: str = "Leon", enable_meta: bool = True):
         self.name = name
         self.enable_meta = enable_meta
         self.state = BrainState()
@@ -158,7 +158,7 @@ class ThinkingBrain:
             if not self.goals.get_active():
                 self.goals.create(goal)
 
-        logger.info(f"[Brain Cycle {self.state.cycle_count}] START | mode={reasoning_mode}")
+        logger.info(f"[{self.name} Cycle {self.state.cycle_count}] START | mode={reasoning_mode}")
 
         perceived = self.perception.process(input_data)
         thought = Thought(
@@ -245,11 +245,10 @@ class ThinkingBrain:
 
         event_bus.publish(
             "BrainCycleCompleted",
-            {"cycle": self.state.cycle_count, "mode": selected_mode, "confidence": confidence},
+            {"cycle": self.state.cycle_count, "mode": selected_mode, "confidence": confidence, "name": self.name},
             source="brain",
         )
 
-        # Async bus best-effort
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
@@ -257,7 +256,7 @@ class ThinkingBrain:
                 asyncio.create_task(
                     async_event_bus.publish(
                         "BrainCycleCompleted",
-                        {"cycle": self.state.cycle_count, "mode": selected_mode, "confidence": confidence},
+                        {"cycle": self.state.cycle_count, "mode": selected_mode, "confidence": confidence, "name": self.name},
                         source="brain",
                     )
                 )
@@ -266,6 +265,7 @@ class ThinkingBrain:
 
         result = {
             "cycle": self.state.cycle_count,
+            "name": self.name,
             "input_summary": thought.content,
             "modality": thought.modality,
             "reasoning_mode": selected_mode,
@@ -280,7 +280,7 @@ class ThinkingBrain:
             "llm_used": reasoning_result.get("llm_used", False),
         }
         logger.info(
-            f"[Brain Cycle {self.state.cycle_count}] END | mode={selected_mode} | conf={confidence:.3f}"
+            f"[{self.name} Cycle {self.state.cycle_count}] END | mode={selected_mode} | conf={confidence:.3f}"
         )
         return result
 
@@ -293,7 +293,6 @@ class ThinkingBrain:
         allow_rethink: bool = True,
         use_knowledge: bool = True,
     ) -> Dict[str, Any]:
-        """Async think – event loop-u bloklamır."""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None,

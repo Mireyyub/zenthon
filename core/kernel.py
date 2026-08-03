@@ -1,7 +1,5 @@
 """
-Zenthon Kernel – sistemin əməliyyat mərkəzi.
-
-initialize → start → (pause/resume) → shutdown
+Leon / Zenthon Kernel – sistemin əməliyyat mərkəzi.
 """
 
 from __future__ import annotations
@@ -21,15 +19,10 @@ from core.exceptions import KernelError
 
 
 class SystemKernel:
-    """Zenthon runtime kernel."""
-
     def __init__(self):
         self.config = config
         self._initialized = False
 
-    # ------------------------------------------------------------------
-    # Lifecycle API
-    # ------------------------------------------------------------------
     def initialize(self) -> None:
         if self._initialized:
             return
@@ -65,9 +58,6 @@ class SystemKernel:
         self.initialize()
         self.start()
 
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
     def _register_core_services(self) -> None:
         service_registry.register("event_bus", event_bus)
         service_registry.register("scheduler", scheduler)
@@ -76,13 +66,15 @@ class SystemKernel:
         service_registry.register("config", config)
         service_registry.register("logger", logger)
 
-        # Brain (lazy)
         def _brain_factory():
             from brain import ThinkingBrain
-            return ThinkingBrain(name="ZenthonBrain")
+            return ThinkingBrain(name="Leon")
 
         service_registry.register_factory("brain", _brain_factory)
-        service_registry.register_factory("llm", lambda: __import__("brain.llm", fromlist=["get_llm_client"]).get_llm_client())
+        service_registry.register_factory(
+            "llm",
+            lambda: __import__("brain.llm", fromlist=["get_llm_client"]).get_llm_client(),
+        )
 
     def _check_environment(self) -> None:
         required = ["numpy", "pandas"]
@@ -95,7 +87,6 @@ class SystemKernel:
                 missing.append(pkg)
         if missing:
             logger.warning(f"Missing required packages: {missing}")
-
         for pkg in optional:
             try:
                 __import__(pkg)
@@ -120,12 +111,8 @@ class SystemKernel:
             info["CUDA"] = str(torch.cuda.is_available())
         except Exception:
             info["CUDA"] = "n/a"
-
         logger.info("System info: " + ", ".join(f"{k}={v}" for k, v in info.items()))
 
-    # ------------------------------------------------------------------
-    # Resource helpers (backward compatible)
-    # ------------------------------------------------------------------
     def get_system_resources(self) -> Dict[str, Any]:
         result: Dict[str, Any] = {"state": lifecycle.get_state()}
         try:
@@ -166,5 +153,4 @@ class SystemKernel:
         }
 
 
-# Global kernel
 kernel = SystemKernel()
