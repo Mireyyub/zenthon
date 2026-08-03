@@ -1,9 +1,9 @@
-# Lesson 000001
+# Lesson 000005
 
-Lesson ID: 000001
+Lesson ID: 000005
 
 Lesson Name:
-Existence
+Relation
 
 Volume: 01 Foundation
 
@@ -14,44 +14,35 @@ Version:
 
 GOAL
 
-LEON-a mövcudluq və varlıq anlayışını öyrətmək.
+LEON-a əlaqə anlayışını öyrətmək.
 
 --------------------------------------------------
 
 Definition
 
-Mövcud olan hər şey varlıqdır.
-
-Əgər bir şey müşahidə oluna, ölçülə, hiss edilə və ya müəyyən edilə bilirsə,
-o mövcuddur.
+Əlaqə iki və ya daha çox varlıq/obyekt arasında bağlantıdır.
 
 --------------------------------------------------
 
 Examples
 
-daş
+is_a
 
-alma
+part_of
 
-insan
+near
 
-ulduz
-
-planet
-
---------------------------------------------------
-
-Counter Examples
-
-kvadrat dairə
+owned_by
 
 --------------------------------------------------
 
 Logical Rules
 
-Əgər X mövcuddursa, X varlıqdır.
+Əlaqə obyekt deyil.
 
-Əgər X mövcud deyilsə, X real obyekt deyil.
+Əlaqənin mövcudluğu eynilik demək deyil.
+
+Oxşarlıq eynilik demək deyil.
 
 --------------------------------------------------
 
@@ -59,7 +50,7 @@ Exercises
 
 Sual
 
-Daş mövcuddurmu?
+is_a əlaqədirmi?
 
 Cavab
 
@@ -69,17 +60,7 @@ Bəli.
 
 Sual
 
-Ay mövcuddurmu?
-
-Cavab
-
-Bəli.
-
---------------------------------------------------
-
-Sual
-
-Kvadrat dairə mövcuddurmu?
+Pişik şirdirmi?
 
 Cavab
 
@@ -91,11 +72,21 @@ SELF TEST
 
 Input
 
-daş
+is_a
 
 Output
 
-Varlıq
+Əlaqə
+
+-------------
+
+Input
+
+part_of
+
+Output
+
+Əlaqə
 
 -------------
 
@@ -105,17 +96,7 @@ alma
 
 Output
 
-Varlıq
-
--------------
-
-Input
-
-kvadrat dairə
-
-Output
-
-Mövcud deyil
+Obyekt
 
 -------------
 

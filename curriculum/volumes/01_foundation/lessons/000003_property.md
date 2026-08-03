@@ -1,9 +1,9 @@
-# Lesson 000001
+# Lesson 000003
 
-Lesson ID: 000001
+Lesson ID: 000003
 
 Lesson Name:
-Existence
+Property
 
 Volume: 01 Foundation
 
@@ -14,44 +14,35 @@ Version:
 
 GOAL
 
-LEON-a mövcudluq və varlıq anlayışını öyrətmək.
+LEON-a xüsusiyyət anlayışını öyrətmək.
 
 --------------------------------------------------
 
 Definition
 
-Mövcud olan hər şey varlıqdır.
-
-Əgər bir şey müşahidə oluna, ölçülə, hiss edilə və ya müəyyən edilə bilirsə,
-o mövcuddur.
+Xüsusiyyət obyekti təsvir edən məlumatdır.
 
 --------------------------------------------------
 
 Examples
 
-daş
+Rəng
 
-alma
+Çəki
 
-insan
+Forma
 
-ulduz
+Temperatur
 
-planet
-
---------------------------------------------------
-
-Counter Examples
-
-kvadrat dairə
+Sürət
 
 --------------------------------------------------
 
 Logical Rules
 
-Əgər X mövcuddursa, X varlıqdır.
+Xüsusiyyət obyektin özü deyil.
 
-Əgər X mövcud deyilsə, X real obyekt deyil.
+Xüsusiyyət obyekti təsvir edir.
 
 --------------------------------------------------
 
@@ -59,7 +50,17 @@ Exercises
 
 Sual
 
-Daş mövcuddurmu?
+Almanın rəngi nədir?
+
+Cavab
+
+Qırmızı, yaşıl və ya sarı ola bilər.
+
+--------------------------------------------------
+
+Sual
+
+İnsanın yaşı xüsusiyyətdirmi?
 
 Cavab
 
@@ -69,7 +70,7 @@ Bəli.
 
 Sual
 
-Ay mövcuddurmu?
+Rəng xüsusiyyətdirmi?
 
 Cavab
 
@@ -79,11 +80,11 @@ Bəli.
 
 Sual
 
-Kvadrat dairə mövcuddurmu?
+Temperatur xüsusiyyətdirmi?
 
 Cavab
 
-Xeyr.
+Bəli.
 
 --------------------------------------------------
 
@@ -91,31 +92,31 @@ SELF TEST
 
 Input
 
-daş
+rəng
 
 Output
 
-Varlıq
+Xüsusiyyət
 
 -------------
 
 Input
 
-alma
+çəki
 
 Output
 
-Varlıq
+Xüsusiyyət
 
 -------------
 
 Input
 
-kvadrat dairə
+temperatur
 
 Output
 
-Mövcud deyil
+Xüsusiyyət
 
 -------------
 

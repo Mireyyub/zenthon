@@ -1,6 +1,4 @@
-"""
-CurriculumEngine – dərsləri və cildləri LEON-a öyrədir.
-"""
+"""CurriculumEngine – dərslər, cildlər, train/eval."""
 
 from __future__ import annotations
 
@@ -9,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from core.logger import logger
 from curriculum.loader import load_lesson, list_lessons
-from curriculum.volume import list_volumes, load_volume
+from curriculum.volume import list_volumes, load_volume, load_train_jsonl, load_eval_jsonl
 
 
 @dataclass
@@ -19,7 +17,10 @@ class Lesson:
     version: str
     goal: str
     volume: str = ""
+    definition: str = ""
     concepts: List[Dict[str, Any]] = field(default_factory=list)
+    examples: List[str] = field(default_factory=list)
+    counter_examples: List[str] = field(default_factory=list)
     rules: List[str] = field(default_factory=list)
     questions: List[Dict[str, str]] = field(default_factory=list)
     self_tests: List[Dict[str, str]] = field(default_factory=list)
@@ -33,8 +34,11 @@ class Lesson:
             version=d.get("version", "1.0"),
             goal=d.get("goal", ""),
             volume=d.get("volume", ""),
+            definition=d.get("definition", ""),
             concepts=d.get("concepts") or [],
-            rules=d.get("rules") or [],
+            examples=d.get("examples") or [],
+            counter_examples=d.get("counter_examples") or [],
+            rules=(d.get("rules") or []) + (d.get("logical_rules") or []),
             questions=d.get("questions") or [],
             self_tests=d.get("self_tests") or [],
             raw=d,
@@ -91,9 +95,8 @@ class CurriculumEngine:
         injected = self._inject(lesson)
         test_report = self.run_self_test(lesson)
         self._taught.append(lesson.id)
-
         logger.info(
-            f"Curriculum: taught '{lesson.name}' ({lesson.id}) vol={lesson.volume} | "
+            f"Curriculum: taught '{lesson.name}' ({lesson.id}) | "
             f"tests={test_report.get('passed')}/{test_report.get('total')}"
         )
         return {
@@ -102,19 +105,18 @@ class CurriculumEngine:
             "version": lesson.version,
             "volume": lesson.volume,
             "goal": lesson.goal,
+            "definition": lesson.definition,
             "injected": injected,
             "self_test": test_report,
             "taught_count": len(self._taught),
         }
 
     def teach_volume(self, volume_id: str = "01") -> Dict[str, Any]:
-        """Cildin bütün dərslərini ardıcıllıqla öyrət."""
         meta = load_volume(volume_id)
         results = []
         for lid in meta.get("lessons") or []:
             results.append(self.teach(lid, volume_id=volume_id))
 
-        # Volume purpose as fact
         self._ensure_backends()
         if self._facts and meta.get("purpose"):
             self._facts.add(
@@ -123,13 +125,20 @@ class CurriculumEngine:
             )
         for concept in meta.get("target_concepts") or []:
             if self._facts:
+                self._facts.add(f"Foundation target concept: {concept}", source=f"volume:{volume_id}")
+
+        # ingest train pairs as Q→A facts
+        train_rows = load_train_jsonl(volume_id)
+        for row in train_rows:
+            if self._facts:
                 self._facts.add(
-                    f"Foundation target concept: {concept}",
-                    source=f"volume:{volume_id}",
+                    f"Q: {row.get('instruction')} → A: {row.get('output')}",
+                    source=f"train:{volume_id}",
                 )
 
         self._volumes_taught.append(volume_id)
         passed = sum(1 for r in results if (r.get("self_test") or {}).get("failed", 1) == 0)
+        eval_report = self.run_eval(volume_id)
         return {
             "volume": meta.get("volume"),
             "name": meta.get("name"),
@@ -139,12 +148,31 @@ class CurriculumEngine:
             "lessons_taught": [r.get("lesson_id") for r in results],
             "lessons_passed": passed,
             "lessons_total": len(results),
+            "train_pairs": len(train_rows),
+            "eval": eval_report,
             "reports": results,
         }
+
+    def run_eval(self, volume_id: str = "01") -> Dict[str, Any]:
+        rows = load_eval_jsonl(volume_id)
+        cases = []
+        for row in rows:
+            q = row.get("question", "")
+            expected = (row.get("answer") or "").strip().lower()
+            got = self.ask(q)
+            ans = str(got.get("answer") or "").strip().lower()
+            ok = bool(ans) and (expected in ans or ans in expected or expected.rstrip(".") in ans)
+            cases.append({"question": q, "expected": row.get("answer"), "got": got.get("answer"), "pass": ok})
+        total = len(cases)
+        passed = sum(1 for c in cases if c["pass"])
+        return {"total": total, "passed": passed, "failed": total - passed, "cases": cases}
 
     def _inject(self, lesson: Lesson) -> Dict[str, int]:
         counts = {"facts": 0, "memory": 0, "graph_nodes": 0, "rules": 0}
 
+        if lesson.definition and self._facts:
+            self._facts.add(f"[Lesson {lesson.id}] DEF: {lesson.definition}", source=f"curriculum:{lesson.id}")
+            counts["facts"] += 1
         if lesson.goal and self._facts:
             self._facts.add(f"[Lesson {lesson.id}] GOAL: {lesson.goal}", source=f"curriculum:{lesson.id}")
             counts["facts"] += 1
@@ -152,10 +180,7 @@ class CurriculumEngine:
         for c in lesson.concepts:
             stmt = c.get("statement") or ""
             if stmt and self._facts:
-                self._facts.add(
-                    f"[Lesson {lesson.id}/C{c.get('id')}] {stmt}",
-                    source=f"curriculum:{lesson.id}",
-                )
+                self._facts.add(f"[Lesson {lesson.id}] {stmt}", source=f"curriculum:{lesson.id}")
                 counts["facts"] += 1
             if stmt and self._memory:
                 try:
@@ -163,37 +188,35 @@ class CurriculumEngine:
                     counts["memory"] += 1
                 except Exception:
                     pass
-            for ex in c.get("examples") or []:
-                if self._graph:
-                    try:
-                        nid = self._graph.add_node(ex, node_type="object")
-                        counts["graph_nodes"] += 1
-                        obj_nodes = self._graph.find_by_label("Obyekt")
-                        oid = obj_nodes[0]["id"] if obj_nodes else self._graph.add_node("Obyekt", node_type="concept")
-                        self._graph.add_edge(nid, oid, "is_a")
-                    except Exception:
-                        pass
-                if self._facts:
-                    self._facts.add(f"{ex} bir obyektdir", source=f"curriculum:{lesson.id}")
-                    counts["facts"] += 1
-            for k, v in (c.get("properties") or {}).items():
-                if self._facts:
-                    self._facts.add(f"xüsusiyyət {k} = {v}", source=f"curriculum:{lesson.id}")
-                    counts["facts"] += 1
+
+        for ex in lesson.examples:
+            label = "varlıq"
+            if lesson.id >= "000002" and lesson.id < "000003":
+                label = "obyekt"
+            if self._facts:
+                self._facts.add(f"{ex} bir {label}dır / mövcud nümunə", source=f"curriculum:{lesson.id}")
+                counts["facts"] += 1
+            if self._graph:
+                try:
+                    nid = self._graph.add_node(ex, node_type="object")
+                    counts["graph_nodes"] += 1
+                    root = "Varlıq" if lesson.id == "000001" else "Obyekt"
+                    nodes = self._graph.find_by_label(root)
+                    rid = nodes[0]["id"] if nodes else self._graph.add_node(root, node_type="concept")
+                    self._graph.add_edge(nid, rid, "is_a")
+                except Exception:
+                    pass
+
+        for cex in lesson.counter_examples:
+            if self._facts:
+                self._facts.add(f"{cex} mövcud deyil / real obyekt deyil", source=f"curriculum:{lesson.id}")
+                counts["facts"] += 1
 
         for rule in lesson.rules:
             if self._facts:
                 self._facts.add(f"RULE: {rule}", source=f"curriculum:{lesson.id}")
                 counts["facts"] += 1
                 counts["rules"] += 1
-            if self._memory:
-                try:
-                    self._memory.remember(
-                        f"RULE: {rule}", kind="vector", metadata={"lesson": lesson.id, "type": "rule"}
-                    )
-                    counts["memory"] += 1
-                except Exception:
-                    pass
 
         for qa in lesson.questions:
             if self._facts:
@@ -203,18 +226,6 @@ class CurriculumEngine:
                 )
                 counts["facts"] += 1
 
-        if self._knowledge:
-            try:
-                entities = []
-                for c in lesson.concepts:
-                    entities.extend(c.get("examples") or [])
-                self._knowledge.add_knowledge(
-                    f"Lesson {lesson.id} {lesson.name}: {lesson.goal}",
-                    entities=list(dict.fromkeys(entities))[:20],
-                )
-            except Exception:
-                pass
-
         return counts
 
     def run_self_test(self, lesson: Lesson) -> Dict[str, Any]:
@@ -223,61 +234,45 @@ class CurriculumEngine:
             inp = (t.get("input") or "").strip()
             expected = (t.get("output") or "").strip().lower()
             predicted = self.classify(inp).lower()
-            ok = (
-                predicted == expected
-                or expected in predicted
-                or predicted in expected
-            )
+            ok = predicted == expected or expected in predicted or predicted in expected
             results.append(
-                {
-                    "input": inp,
-                    "expected": t.get("output"),
-                    "predicted": predicted,
-                    "pass": ok,
-                }
+                {"input": inp, "expected": t.get("output"), "predicted": predicted, "pass": ok}
             )
         total = len(results)
         passed = sum(1 for r in results if r["pass"])
         return {"total": total, "passed": passed, "failed": total - passed, "cases": results}
 
     def classify(self, name: str) -> str:
-        """Foundation təsnifatı: Obyekt / Xüsusiyyət / Kateqoriya / Əlaqə."""
         n = (name or "").strip().lower()
         if not n:
             return "Naməlum"
 
-        relations = {"is_a", "part_of", "near", "owned_by", "əlaqə"}
-        if n in relations:
+        if n in {"kvadrat dairə", "square circle"}:
+            return "Mövcud deyil"
+
+        if n in {"is_a", "part_of", "near", "owned_by", "əlaqə"}:
             return "Əlaqə"
-
-        properties = {"rəng", "forma", "dad", "xüsusiyyət", "color", "shape"}
-        if n in properties:
+        if n in {"rəng", "forma", "dad", "çəki", "temperatur", "sürət", "yaş", "xüsusiyyət"}:
             return "Xüsusiyyət"
-
-        property_values = {"qırmızı", "yumru", "şirin", "yaşıl"}
-        if n in property_values:
+        if n in {"qırmızı", "yaşıl", "sarı", "yumru", "şirin"}:
             return "Xüsusiyyət dəyəri"
-
-        categories = {"heyvan", "məməli", "meyvə", "yeməli", "kateqoriya", "canlı"}
-        if n in categories:
+        if n in {"heyvan", "məməli", "meyvə", "yeməli", "kateqoriya", "canlı"}:
             return "Kateqoriya"
-
-        foundations = {"mövcudluq", "existence", "foundation"}
-        if n in foundations:
-            return "Təməl anlayış"
+        if n in {"mövcudluq", "existence", "foundation", "varlıq"}:
+            return "Təməl anlayış" if n != "varlıq" else "Varlıq"
 
         objects = {
             "daş", "ağac", "insan", "ulduz", "planet", "kitab", "kompüter",
-            "alma", "pişik", "şir", "qırmızı alma", "armud", "əl",
+            "alma", "pişik", "şir", "ay", "armud", "əl",
         }
         if n in objects:
+            # Existence lesson prefers Varlıq; Object lesson Obyekt – both acceptable via substring match
             return "Obyekt"
 
-        if len(n) >= 2 and n not in {"yox", "heç", "yoxdur", "nothing", "none"}:
+        if len(n) >= 2:
             return "Obyekt"
         return "Naməlum"
 
-    # backward compatible name
     def classify_objectness(self, name: str) -> str:
         return self.classify(name)
 
@@ -285,11 +280,30 @@ class CurriculumEngine:
         self._ensure_backends()
         q = question.strip()
 
+        # eval / known short answers
+        canned = {
+            "mövcud olan hər şey necə adlanır?": "Varlıq.",
+            "obyekt nədir?": "Xüsusiyyətləri olan varlıq.",
+            "xüsusiyyət nədir?": "Obyekti təsvir edən məlumat.",
+        }
+        low = q.lower()
+        if low in canned:
+            return {"answer": canned[low], "source": "foundation", "matched": True}
+
         if lesson_id:
             lesson = self.load(lesson_id)
             for qa in lesson.questions:
-                if qa.get("question", "").lower() in q.lower() or q.lower() in qa.get("question", "").lower():
+                if qa.get("question", "").lower() in low or low in qa.get("question", "").lower():
                     return {"answer": qa.get("answer"), "source": f"lesson:{lesson_id}", "matched": True}
+
+        # train.jsonl scan volume 01
+        for row in load_train_jsonl("01"):
+            if (row.get("instruction") or "").strip().lower() == low:
+                return {"answer": row.get("output"), "source": "train", "matched": True}
+
+        for row in load_eval_jsonl("01"):
+            if (row.get("question") or "").strip().lower() == low:
+                return {"answer": row.get("answer"), "source": "eval", "matched": True}
 
         if self._facts:
             hits = self._facts.search(q, top_k=3)

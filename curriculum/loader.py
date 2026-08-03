@@ -1,4 +1,4 @@
-"""Lesson loader – volumes + legacy lessons."""
+"""Lesson loader – volumes + legacy lessons + Definition/Rules/Exercises."""
 
 from __future__ import annotations
 
@@ -18,13 +18,11 @@ def list_lessons(volume_id: Optional[str] = None) -> List[str]:
         except FileNotFoundError:
             return []
     ids: List[str] = []
-    # all volumes
     for vid in list_volumes():
         try:
             ids.extend(load_volume(vid).get("lessons") or [])
         except Exception:
             pass
-    # legacy
     if LESSONS_DIR.exists():
         for p in sorted(LESSONS_DIR.glob("*.md")):
             m = re.match(r"(\d+)", p.stem)
@@ -35,15 +33,12 @@ def list_lessons(volume_id: Optional[str] = None) -> List[str]:
 
 def load_lesson(lesson_id: str, volume_id: Optional[str] = None) -> Dict[str, Any]:
     path = get_lesson_path(lesson_id, volume_id=volume_id)
-    if path is None:
-        # legacy direct
-        if LESSONS_DIR.exists():
-            for p in LESSONS_DIR.glob(f"{lesson_id}*.md"):
-                path = p
-                break
+    if path is None and LESSONS_DIR.exists():
+        for p in LESSONS_DIR.glob(f"{lesson_id}*.md"):
+            path = p
+            break
     if path is None:
         raise FileNotFoundError(f"Lesson not found: {lesson_id}")
-
     text = path.read_text(encoding="utf-8")
     return parse_lesson_markdown(text, lesson_id=lesson_id, source=str(path))
 
@@ -55,7 +50,11 @@ def parse_lesson_markdown(text: str, lesson_id: str = "", source: str = "") -> D
         "version": "1.0",
         "volume": "",
         "goal": "",
+        "definition": "",
         "concepts": [],
+        "examples": [],
+        "counter_examples": [],
+        "logical_rules": [],
         "rules": [],
         "questions": [],
         "self_tests": [],
@@ -64,8 +63,9 @@ def parse_lesson_markdown(text: str, lesson_id: str = "", source: str = "") -> D
     }
 
     for line in text.splitlines():
-        if line.startswith("Lesson Name:"):
-            data["name"] = line.split(":", 1)[1].strip()
+        if line.startswith("Lesson Name:") or line.startswith("Title"):
+            if ":" in line:
+                data["name"] = line.split(":", 1)[1].strip()
         elif line.startswith("Lesson ID:"):
             data["id"] = line.split(":", 1)[1].strip() or lesson_id
         elif line.startswith("Version:"):
@@ -73,23 +73,51 @@ def parse_lesson_markdown(text: str, lesson_id: str = "", source: str = "") -> D
         elif line.startswith("Volume:"):
             data["volume"] = line.split(":", 1)[1].strip()
 
+    # Title on its own line after "Title"
+    lines = text.splitlines()
+    for i, ln in enumerate(lines):
+        if ln.strip() == "Title" and i + 1 < len(lines):
+            nxt = lines[i + 1].strip()
+            if nxt and not nxt.startswith("#"):
+                data["name"] = data["name"] or nxt
+
     sections = re.split(r"\n-{5,}\n", text)
     for sec in sections:
         if not sec.strip():
             continue
-        header = sec.strip().splitlines()[0].strip().upper()
+        header = sec.strip().splitlines()[0].strip()
+        header_u = header.upper()
         body = "\n".join(sec.strip().splitlines()[1:]).strip()
 
-        if header == "GOAL":
+        if header_u == "GOAL":
             data["goal"] = body
-        elif header.startswith("CONCEPT"):
-            data["concepts"].append(_parse_concept(header, body))
-        elif header == "RULES":
-            data["rules"] = [ln.strip() for ln in body.splitlines() if ln.strip()]
-        elif header == "QUESTIONS":
-            data["questions"] = _parse_questions(body)
-        elif header == "SELF TEST":
+        elif header_u in ("DEFINITION",):
+            data["definition"] = body
+            data["concepts"].append(
+                {"id": 0, "statement": body.replace("\n", " ").strip(), "examples": [], "properties": {}}
+            )
+        elif header_u in ("EXAMPLES", "NÜMUNƏLƏR"):
+            data["examples"] = [ln.strip() for ln in body.splitlines() if ln.strip()]
+        elif header_u in ("COUNTER EXAMPLES", "COUNTER_EXAMPLES"):
+            data["counter_examples"] = [ln.strip() for ln in body.splitlines() if ln.strip()]
+        elif header_u in ("LOGICAL RULES", "LOGICAL_RULES"):
+            rules = [ln.strip() for ln in body.splitlines() if ln.strip()]
+            data["logical_rules"] = rules
+            data["rules"].extend(rules)
+        elif header_u == "RULES":
+            data["rules"].extend([ln.strip() for ln in body.splitlines() if ln.strip()])
+        elif header_u in ("EXERCISES", "QUESTIONS"):
+            data["questions"].extend(_parse_questions(body))
+        elif header_u.startswith("CONCEPT"):
+            data["concepts"].append(_parse_concept(header_u, body))
+        elif header_u == "SELF TEST":
             data["self_tests"] = _parse_self_tests(body)
+
+    # Attach examples to first concept if present
+    if data["examples"] and data["concepts"]:
+        data["concepts"][0]["examples"] = list(
+            dict.fromkeys((data["concepts"][0].get("examples") or []) + data["examples"])
+        )
 
     return data
 
@@ -98,9 +126,7 @@ def _parse_concept(header: str, body: str) -> Dict[str, Any]:
     m = re.search(r"CONCEPT\s+(\d+)", header, re.I)
     num = int(m.group(1)) if m else 0
     lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
-    statement_lines = []
-    examples = []
-    props: Dict[str, str] = {}
+    statement_lines, examples, props = [], [], {}
     mode = "statement"
     for ln in lines:
         low = ln.lower()

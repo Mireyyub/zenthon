@@ -1,9 +1,8 @@
-"""
-Genesis Curriculum – Volume idarəetməsi.
-"""
+"""Genesis Curriculum – Volume idarəetməsi."""
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -22,22 +21,56 @@ def load_volume(volume_id: str = "01") -> Dict[str, Any]:
     if path is None:
         raise FileNotFoundError(f"Volume not found: {volume_id}")
 
+    meta: Dict[str, Any] = {
+        "volume": volume_id,
+        "name": "",
+        "version": "1.0.0",
+        "purpose": "",
+        "target_concepts": [],
+        "lessons": [],
+        "path": str(path),
+        "raw": "",
+    }
+
+    # Prefer index.json
+    index_path = path / "index.json"
+    if index_path.exists():
+        try:
+            idx = json.loads(index_path.read_text(encoding="utf-8"))
+            meta["volume"] = str(idx.get("volume", volume_id))
+            meta["name"] = idx.get("title") or idx.get("name") or ""
+            meta["version"] = idx.get("version", meta["version"])
+            meta["lessons"] = [str(x) for x in (idx.get("lessons") or [])]
+            meta["target_concepts"] = idx.get("target_concepts") or []
+        except Exception:
+            pass
+
     meta_path = path / "VOLUME.md"
-    text = meta_path.read_text(encoding="utf-8") if meta_path.exists() else ""
-    meta = _parse_volume_meta(text)
-    meta["path"] = str(path)
-    meta["lessons"] = _list_volume_lessons(path)
+    if meta_path.exists():
+        text = meta_path.read_text(encoding="utf-8")
+        meta["raw"] = text
+        parsed = _parse_volume_meta(text)
+        meta["name"] = meta["name"] or parsed.get("name", "")
+        meta["version"] = parsed.get("version") or meta["version"]
+        meta["purpose"] = parsed.get("purpose", "")
+        if not meta["target_concepts"]:
+            meta["target_concepts"] = parsed.get("target_concepts") or []
+        if not meta["lessons"]:
+            meta["lessons"] = _list_volume_lessons(path)
+        meta["volume"] = parsed.get("volume") or meta["volume"]
+    elif not meta["lessons"]:
+        meta["lessons"] = _list_volume_lessons(path)
+
     return meta
 
 
 def _resolve_volume_dir(volume_id: str) -> Optional[Path]:
     if not VOLUMES_DIR.exists():
         return None
-    # 01 or 01_foundation
     for p in VOLUMES_DIR.iterdir():
         if not p.is_dir():
             continue
-        if p.name == volume_id or p.name.startswith(volume_id):
+        if p.name == volume_id or p.name.startswith(str(volume_id)):
             return p
     return None
 
@@ -61,7 +94,6 @@ def _parse_volume_meta(text: str) -> Dict[str, Any]:
         "version": "1.0.0",
         "purpose": "",
         "target_concepts": [],
-        "raw": text,
     }
     for line in text.splitlines():
         if line.startswith("Volume:"):
@@ -71,7 +103,6 @@ def _parse_volume_meta(text: str) -> Dict[str, Any]:
         elif line.startswith("Version:"):
             data["version"] = line.split(":", 1)[1].strip()
 
-    # Purpose section
     parts = re.split(r"\n-{5,}\n", text)
     for sec in parts:
         lines = sec.strip().splitlines()
@@ -81,7 +112,6 @@ def _parse_volume_meta(text: str) -> Dict[str, Any]:
         body = "\n".join(lines[1:]).strip()
         if header == "purpose":
             data["purpose"] = body
-            # extract bullet concepts
             concepts = []
             for ln in body.splitlines():
                 ln = ln.strip()
@@ -92,13 +122,11 @@ def _parse_volume_meta(text: str) -> Dict[str, Any]:
 
 
 def get_lesson_path(lesson_id: str, volume_id: Optional[str] = None) -> Optional[Path]:
-    """Dərs faylını volume içində və ya köhnə lessons/ qovluğunda tap."""
     if volume_id:
         vdir = _resolve_volume_dir(volume_id)
         if vdir:
             for p in (vdir / "lessons").glob(f"{lesson_id}*.md"):
                 return p
-    # search all volumes
     if VOLUMES_DIR.exists():
         for vdir in sorted(VOLUMES_DIR.iterdir()):
             lessons = vdir / "lessons"
@@ -106,9 +134,46 @@ def get_lesson_path(lesson_id: str, volume_id: Optional[str] = None) -> Optional
                 continue
             for p in lessons.glob(f"{lesson_id}*.md"):
                 return p
-    # legacy flat lessons/
     legacy = Path(__file__).resolve().parent / "lessons"
     if legacy.exists():
         for p in legacy.glob(f"{lesson_id}*.md"):
             return p
     return None
+
+
+def load_train_jsonl(volume_id: str = "01") -> List[Dict[str, Any]]:
+    vdir = _resolve_volume_dir(volume_id)
+    if not vdir:
+        return []
+    path = vdir / "train.jsonl"
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except Exception:
+            pass
+    return rows
+
+
+def load_eval_jsonl(volume_id: str = "01") -> List[Dict[str, Any]]:
+    vdir = _resolve_volume_dir(volume_id)
+    if not vdir:
+        return []
+    path = vdir / "eval.jsonl"
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except Exception:
+            pass
+    return rows

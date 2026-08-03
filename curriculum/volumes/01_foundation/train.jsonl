@@ -1,0 +1,10 @@
+{"id":"000001","instruction":"Daş mövcuddurmu?","output":"Bəli."}
+{"id":"000002","instruction":"Kvadrat dairə mövcuddurmu?","output":"Xeyr."}
+{"id":"000003","instruction":"Alma obyektdirmi?","output":"Bəli."}
+{"id":"000004","instruction":"Planet obyektdirmi?","output":"Bəli."}
+{"id":"000005","instruction":"Rəng xüsusiyyətdirmi?","output":"Bəli."}
+{"id":"000006","instruction":"Temperatur xüsusiyyətdirmi?","output":"Bəli."}
+{"id":"000007","instruction":"İnsan obyektdirmi?","output":"Bəli."}
+{"id":"000008","instruction":"Daşın rəngi ola bilərmi?","output":"Bəli."}
+{"id":"000009","instruction":"Almanın çəkisi ola bilərmi?","output":"Bəli."}
+{"id":"000010","instruction":"Pişik obyektdirmi?","output":"Bəli."}

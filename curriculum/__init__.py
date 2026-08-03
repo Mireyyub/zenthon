@@ -4,13 +4,12 @@ LEON Genesis Curriculum.
     from curriculum import CurriculumEngine
 
     eng = CurriculumEngine()
-    eng.teach_volume("01")          # Foundation tam cild
-    eng.teach("000001")             # tək dərs
+    eng.teach_volume("01")
 """
 
 from curriculum.engine import CurriculumEngine, Lesson
 from curriculum.loader import load_lesson, list_lessons
-from curriculum.volume import list_volumes, load_volume
+from curriculum.volume import list_volumes, load_volume, load_train_jsonl, load_eval_jsonl
 
 __all__ = [
     "CurriculumEngine",
@@ -19,4 +18,6 @@ __all__ = [
     "list_lessons",
     "list_volumes",
     "load_volume",
+    "load_train_jsonl",
+    "load_eval_jsonl",
 ]
