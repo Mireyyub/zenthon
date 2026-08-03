@@ -1,20 +1,16 @@
-"""
-Vahid retrieval pipeline (spec 011 / GraphRAG hybrid) – Faza 4.
-
-query → candidates (facts + graph + vector + semantic) → rank → validate
-"""
+"""Unified retrieval – registry-backed, stronger ranking."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 import re
 
 
 @dataclass
 class Candidate:
     content: str
-    source: str  # fact | graph | vector | semantic | working
+    source: str
     score: float
     ref: str = ""
     verified: bool = True
@@ -41,32 +37,43 @@ def _overlap_score(query: str, text: str) -> float:
     if not qt or not tt:
         return 0.0
     inter = len(qt & tt)
-    return inter / max(len(qt), 1)
+    j = inter / max(len(qt | tt), 1)
+    # substring boost
+    ql, tl = query.lower(), text.lower()
+    if ql in tl or tl in ql:
+        j = max(j, 0.85)
+    return j
+
+
+SOURCE_BONUS = {
+    "fact": 0.18,
+    "graph": 0.15,
+    "semantic": 0.12,
+    "vector": 0.08,
+    "working": 0.05,
+}
 
 
 class UnifiedRetriever:
-    """FactStore + KnowledgeGraph + Vector + Semantic."""
-
     def __init__(self):
         self._facts = None
         self._graph = None
         self._vector = None
         self._semantic = None
-        self._working = None
 
     def _backends(self):
         if self._facts is None:
             try:
-                from knowledge.facts import FactStore
+                from knowledge.registry import get_fact_store
 
-                self._facts = FactStore()
+                self._facts = get_fact_store()
             except Exception:
                 self._facts = False
         if self._graph is None:
             try:
-                from knowledge.graph import KnowledgeGraph
+                from knowledge.registry import get_graph
 
-                self._graph = KnowledgeGraph()
+                self._graph = get_graph()
             except Exception:
                 self._graph = False
         if self._vector is None:
@@ -94,17 +101,16 @@ class UnifiedRetriever:
         self._backends()
         candidates: List[Candidate] = []
 
-        # Facts
         if self._facts:
             try:
                 for f in self._facts.search(query, top_k=top_k):
                     stmt = f.get("statement", "")
-                    score = max(_overlap_score(query, stmt), 0.15 * float(f.get("confidence", 1)))
+                    base = max(_overlap_score(query, stmt), 0.12 * float(f.get("confidence", 1)))
                     candidates.append(
                         Candidate(
                             content=stmt,
                             source="fact",
-                            score=score + 0.2,
+                            score=base + SOURCE_BONUS["fact"],
                             ref=f.get("id", ""),
                             verified=True,
                             meta={"confidence": f.get("confidence"), "src": f.get("source")},
@@ -113,12 +119,11 @@ class UnifiedRetriever:
             except Exception:
                 pass
 
-        # Graph nodes + neighbors
         if self._graph:
             try:
                 for n in self._graph.query(query, top_k=top_k):
                     label = n.get("label", "")
-                    score = _overlap_score(query, label) + 0.25
+                    score = _overlap_score(query, label) + SOURCE_BONUS["graph"]
                     candidates.append(
                         Candidate(
                             content=label,
@@ -129,21 +134,36 @@ class UnifiedRetriever:
                             meta={"type": n.get("type")},
                         )
                     )
-                    for neigh, rel in self._graph.neighbors(n["id"])[:3]:
+                    # 1-hop
+                    for neigh, rel in self._graph.neighbors(n["id"])[:4]:
+                        hop = f"{label} -{rel}-> {neigh.get('label')}"
                         candidates.append(
                             Candidate(
-                                content=f"{label} -{rel}-> {neigh.get('label')}",
+                                content=hop,
                                 source="graph",
-                                score=score * 0.85,
+                                score=score * 0.88,
                                 ref=neigh.get("id", ""),
                                 verified=True,
-                                meta={"relation": rel},
+                                meta={"relation": rel, "hop": 1},
                             )
                         )
+                        # light 2-hop for is_a chains
+                        if rel == "is_a":
+                            for n2, rel2 in self._graph.neighbors(neigh["id"])[:2]:
+                                if rel2 == "is_a":
+                                    candidates.append(
+                                        Candidate(
+                                            content=f"{label} -is_a-> {neigh.get('label')} -is_a-> {n2.get('label')}",
+                                            source="graph",
+                                            score=score * 0.7,
+                                            ref=n2.get("id", ""),
+                                            verified=True,
+                                            meta={"hop": 2},
+                                        )
+                                    )
             except Exception:
                 pass
 
-        # Vector
         if self._vector:
             try:
                 for text, sc in self._vector.search(query, top_k=top_k):
@@ -151,7 +171,7 @@ class UnifiedRetriever:
                         Candidate(
                             content=text,
                             source="vector",
-                            score=float(sc),
+                            score=float(sc) + SOURCE_BONUS["vector"],
                             ref="vector",
                             verified=True,
                         )
@@ -159,7 +179,6 @@ class UnifiedRetriever:
             except Exception:
                 pass
 
-        # Semantic triples
         if self._semantic:
             try:
                 tok = _tokenize(query)
@@ -170,7 +189,7 @@ class UnifiedRetriever:
                         Candidate(
                             content=text,
                             source="semantic",
-                            score=_overlap_score(query, text) + 0.15,
+                            score=_overlap_score(query, text) + SOURCE_BONUS["semantic"],
                             ref=fact.get("id", ""),
                             verified=True,
                             meta={"confidence": fact.get("confidence")},
@@ -179,17 +198,13 @@ class UnifiedRetriever:
             except Exception:
                 pass
 
-        # Rank
         ranked = sorted(candidates, key=lambda c: c.score, reverse=True)
-
-        # Validate: drop weak / optional unverified
-        validated = []
+        validated: List[Candidate] = []
         for c in ranked:
             if c.score < min_score:
                 continue
             if not c.verified and not include_unverified:
                 continue
-            # de-dup by content prefix
             key = c.content[:120].lower()
             if any(v.content[:120].lower() == key for v in validated):
                 continue

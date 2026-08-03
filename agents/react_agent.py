@@ -1,10 +1,9 @@
-"""
-ReAct Agent – Thought → Action → Observation (Faza 5 production).
-"""
+"""ReAct Agent – improved action parse + security gate."""
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+import json
 import re
 
 from agents.base import BaseAgent, AgentResult
@@ -36,16 +35,16 @@ class ReActAgent(BaseAgent):
         observations: List[str] = []
 
         system = (
-            "Sən ReAct agentisən. Hər addımda YALNIZ bu formatdan birini yaz:\n"
+            "Sən ReAct agentisən. Hər addımda YALNIZ bu formatlardan birini yaz:\n"
             "Thought: <düşüncə>\n"
             "Action: <tool_name> | <arg>\n"
+            "və ya JSON: {\"action\": \"tool\", \"arg\": \"...\"}\n"
             "və ya\n"
             "Final: <yekun cavab>\n\n"
             f"Mövcud alətlər:\n{tool_desc}\n"
             "write_file üçün arg: path||content"
         )
 
-        # Heuristic tool path without LLM when possible
         low = task.lower()
         if any(k in low for k in ("saat", "vaxt", "time")):
             try:
@@ -68,7 +67,6 @@ class ReActAgent(BaseAgent):
             if client.is_available:
                 raw = client.complete(prompt, system=system, temperature=0.2, max_tokens=400) or ""
             else:
-                # offline fallback: try calc if expression-like
                 if re.search(r"[\d\+\-\*/]+", task) and any(c in task for c in "+-*/"):
                     expr = re.sub(r"[^0-9\+\-\*/\.\(\) ]", "", task)
                     try:
@@ -93,10 +91,8 @@ class ReActAgent(BaseAgent):
                     metadata={"steps": step, "trace": scratch, "method": "react"},
                 )
 
-            action_m = re.search(r"Action:\s*([\w_]+)\s*\|\s*(.*)", raw, re.I)
-            if action_m:
-                tool_name = action_m.group(1).strip()
-                arg = action_m.group(2).strip()
+            tool_name, arg = self._parse_action(raw)
+            if tool_name:
                 try:
                     obs = tool_registry.dispatch(tool_name, arg)
                     observations.append(f"Observation[{tool_name}]: {str(obs)[:400]}")
@@ -110,3 +106,25 @@ class ReActAgent(BaseAgent):
             output=observations[-1] if observations else "Max steps reached",
             metadata={"steps": max_steps, "trace": scratch, "method": "react", "truncated": True},
         )
+
+    def _parse_action(self, raw: str) -> tuple:
+        # JSON action
+        try:
+            m = re.search(r"\{\s*\"action\"\s*:\s*\"([\w_]+)\"\s*,\s*\"arg\"\s*:\s*\"([^\"]*)\"", raw)
+            if m:
+                return m.group(1), m.group(2)
+            # looser json block
+            jm = re.search(r"\{[^}]+\}", raw)
+            if jm:
+                data = json.loads(jm.group(0))
+                if "action" in data:
+                    return str(data["action"]), str(data.get("arg", data.get("input", "")))
+        except Exception:
+            pass
+        action_m = re.search(r"Action:\s*([\w_]+)\s*\|\s*(.*)", raw, re.I)
+        if action_m:
+            return action_m.group(1).strip(), action_m.group(2).strip()
+        action_m2 = re.search(r"Action:\s*([\w_]+)\s*\((.*)\)", raw, re.I)
+        if action_m2:
+            return action_m2.group(1).strip(), action_m2.group(2).strip()
+        return "", ""

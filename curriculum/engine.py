@@ -1,9 +1,9 @@
-"""CurriculumEngine – graph/facts classify, inject, eval (Faza 2)."""
+"""CurriculumEngine – stronger ask matching + registry backends."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import re
 
 from core.logger import logger
@@ -46,7 +46,6 @@ class Lesson:
         )
 
 
-# Concept root labels for graph
 CONCEPT_ROOTS = {
     "Varlıq": "concept",
     "Obyekt": "concept",
@@ -55,6 +54,41 @@ CONCEPT_ROOTS = {
     "Əlaqə": "concept",
     "Mövcud deyil": "concept",
 }
+
+
+def _norm(s: str) -> str:
+    s = (s or "").strip().lower()
+    s = s.replace("?", " ").replace(".", " ").replace("!", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _tokens(s: str) -> set:
+    return {t for t in re.findall(r"\w+", _norm(s)) if len(t) > 1}
+
+
+def _similarity(a: str, b: str) -> float:
+    """Simple token Jaccard + substring boost."""
+    na, nb = _norm(a), _norm(b)
+    if not na or not nb:
+        return 0.0
+    if na == nb:
+        return 1.0
+    if na in nb or nb in na:
+        return 0.92
+    ta, tb = _tokens(a), _tokens(b)
+    if not ta or not tb:
+        return 0.0
+    inter = len(ta & tb)
+    union = len(ta | tb) or 1
+    j = inter / union
+    # question words weight less
+    stop = {"nədir", "nə", "mi", "mı", "dir", "dır", "bir", "və", "hansı", "ola", "bilərmi"}
+    core_a = ta - stop
+    core_b = tb - stop
+    if core_a and core_b:
+        j = max(j, len(core_a & core_b) / (len(core_a | core_b) or 1))
+    return j
 
 
 class CurriculumEngine:
@@ -83,16 +117,16 @@ class CurriculumEngine:
                 self._knowledge = None
         if self._facts is None:
             try:
-                from knowledge.facts import FactStore
+                from knowledge.registry import get_fact_store
 
-                self._facts = FactStore()
+                self._facts = get_fact_store()
             except Exception:
                 self._facts = None
         if self._graph is None:
             try:
-                from knowledge.graph import KnowledgeGraph
+                from knowledge.registry import get_graph
 
-                self._graph = KnowledgeGraph()
+                self._graph = get_graph()
             except Exception:
                 self._graph = None
 
@@ -146,7 +180,6 @@ class CurriculumEngine:
         train_rows = load_train_jsonl(volume_id)
         for row in train_rows:
             if self._facts:
-                # Dataset Standard 002-style fact line
                 conf = float(row.get("confidence", 1.0))
                 self._facts.add(
                     f"Q: {row.get('instruction') or row.get('input', '')} → A: {row.get('output')}",
@@ -218,7 +251,6 @@ class CurriculumEngine:
     def _inject(self, lesson: Lesson) -> Dict[str, int]:
         counts = {"facts": 0, "memory": 0, "graph_nodes": 0, "graph_edges": 0, "rules": 0}
 
-        # Ensure concept roots exist
         if self._graph:
             for root in CONCEPT_ROOTS:
                 self._root_id(root)
@@ -248,7 +280,6 @@ class CurriculumEngine:
                 except Exception:
                     pass
 
-        # Map lesson → primary concept root
         lid = lesson.id
         if lid.startswith("000001"):
             primary = "Varlıq"
@@ -260,32 +291,28 @@ class CurriculumEngine:
             primary = "Kateqoriya"
         elif lid.startswith("000005"):
             primary = "Əlaqə"
+        elif lid.startswith("000006"):
+            primary = "Səbəb"
+        elif lid.startswith("000007"):
+            primary = "Nəticə"
         else:
             primary = "Obyekt"
 
-        # Examples → graph is_a + facts
         for ex in lesson.examples:
             ex = ex.strip()
-            if not ex or ex.lower().startswith("meyvə") or "kateqoriyası" in ex.lower():
-                # category headers in examples
-                if self._graph and "kateqor" in ex.lower():
-                    continue
+            if not ex:
+                continue
             if self._facts:
-                self._facts.add(
-                    f"{ex} → {primary}",
-                    source=f"curriculum:{lesson.id}",
-                )
+                self._facts.add(f"{ex} → {primary}", source=f"curriculum:{lesson.id}")
                 counts["facts"] += 1
             if self._graph and len(ex) < 80 and not ex.endswith("."):
                 try:
-                    # Category membership lines like "alma" under meyvə handled below
                     nid = self._graph.add_node(ex, node_type="entity")
                     counts["graph_nodes"] += 1
                     rid = self._root_id(primary)
                     if rid:
                         self._graph.add_edge(nid, rid, "is_a")
                         counts["graph_edges"] += 1
-                    # Object always is_a Varlıq
                     if primary == "Obyekt":
                         vid = self._root_id("Varlıq")
                         if vid:
@@ -294,7 +321,6 @@ class CurriculumEngine:
                 except Exception:
                     pass
 
-        # Category lesson special: group examples
         if lid.startswith("000004") and self._graph:
             cat_map = {
                 "meyvə": ["alma", "armud", "banan", "şaftalı"],
@@ -318,12 +344,14 @@ class CurriculumEngine:
                     except Exception:
                         pass
                     if self._facts:
-                        self._facts.add(f"{m} {cat} kateqoriyasına daxildir", source=f"curriculum:{lesson.id}")
+                        self._facts.add(
+                            f"{m} {cat} kateqoriyasına daxildir",
+                            source=f"curriculum:{lesson.id}",
+                        )
                         counts["facts"] += 1
 
-        # Relation examples
         if lid.startswith("000005") and self._graph:
-            for rel in ("is_a", "part_of", "near", "owned_by"):
+            for rel in ("is_a", "part_of", "near", "owned_by", "causes"):
                 rid = self._graph.add_node(rel, node_type="relation")
                 root = self._root_id("Əlaqə")
                 if root:
@@ -341,15 +369,6 @@ class CurriculumEngine:
                     source=f"curriculum:{lesson.id}",
                 )
                 counts["facts"] += 1
-            if self._graph and "->" not in cex and len(cex) < 40:
-                try:
-                    nid = self._graph.add_node(cex, node_type="entity")
-                    mid = self._root_id("Mövcud deyil")
-                    if mid:
-                        self._graph.add_edge(nid, mid, "is_a")
-                        counts["graph_edges"] += 1
-                except Exception:
-                    pass
 
         for rule in lesson.rules:
             if self._facts:
@@ -382,25 +401,20 @@ class CurriculumEngine:
         return {"total": total, "passed": passed, "failed": total - passed, "cases": results}
 
     def classify(self, name: str) -> str:
-        """Graph + facts first; minimal fallback lexicon."""
         n = (name or "").strip()
         if not n:
             return "Naməlum"
         low = n.lower()
-
         self._ensure_backends()
 
-        # Counter / non-existence
         if low in {"kvadrat dairə", "square circle"} or "mövcud deyil" in low:
             return "Mövcud deyil"
 
-        # Graph: follow is_a to concept roots
         if self._graph:
             hits = self._graph.find_by_label(n)
             exact = [h for h in hits if h["label"].lower() == low]
             node = exact[0] if exact else (hits[0] if hits else None)
             if node:
-                # BFS is_a upward
                 from collections import deque
 
                 q = deque([node["id"]])
@@ -417,14 +431,12 @@ class CurriculumEngine:
                     for neigh, rel in self._graph.neighbors(nid):
                         if rel == "is_a":
                             q.append(neigh["id"])
-                # priority
                 for pref in ("Mövcud deyil", "Əlaqə", "Kateqoriya", "Xüsusiyyət", "Obyekt", "Varlıq"):
                     if pref in concepts_found:
                         return pref
                 if concepts_found:
                     return concepts_found[0]
 
-        # Facts: "X → Obyekt" / "X bir varlıq"
         if self._facts:
             for f in self._facts.search(n, top_k=8):
                 stmt = (f.get("statement") or "").lower()
@@ -432,36 +444,25 @@ class CurriculumEngine:
                     continue
                 if "mövcud deyil" in stmt:
                     return "Mövcud deyil"
-                if "→ əlaqə" in stmt or "əlaqə" in stmt and low in {
-                    "is_a",
-                    "part_of",
-                    "near",
-                    "owned_by",
-                }:
-                    return "Əlaqə"
-                if "kateqor" in stmt:
-                    return "Kateqoriya"
                 if "xüsusiyyət" in stmt:
                     return "Xüsusiyyət"
+                if "kateqor" in stmt:
+                    return "Kateqoriya"
                 if "→ obyekt" in stmt or "obyekt" in stmt:
                     return "Obyekt"
                 if "→ varlıq" in stmt or "varlıq" in stmt:
                     return "Varlıq"
 
-        # Minimal seed lexicon (bootstrap before teach)
-        if low in {"is_a", "part_of", "near", "owned_by", "əlaqə"}:
+        if low in {"is_a", "part_of", "near", "owned_by", "əlaqə", "causes"}:
             return "Əlaqə"
         if low in {"rəng", "forma", "dad", "çəki", "temperatur", "sürət", "yaş", "xüsusiyyət"}:
             return "Xüsusiyyət"
-        if low in {"qırmızı", "yaşıl", "sarı", "yumru", "şirin"}:
-            return "Xüsusiyyət dəyəri"
         if low in {"heyvan", "məməli", "meyvə", "yeməli", "kateqoriya", "canlı", "quş"}:
             return "Kateqoriya"
-        if low in {"mövcudluq", "existence", "foundation"}:
-            return "Təməl anlayış"
-        if low == "varlıq":
-            return "Varlıq"
-
+        if low in {"səbəb", "cause"}:
+            return "Səbəb"
+        if low in {"nəticə", "effect"}:
+            return "Nəticə"
         if len(low) >= 2:
             return "Obyekt"
         return "Naməlum"
@@ -470,39 +471,66 @@ class CurriculumEngine:
         return self.classify(name)
 
     def ask(self, question: str, lesson_id: Optional[str] = None) -> Dict[str, Any]:
+        """Exact → fuzzy train/eval → lesson Q → graph category → facts."""
         self._ensure_backends()
         q = question.strip()
-        low = q.lower()
+        low = _norm(q)
 
-        # Dataset / train / eval exact
+        best: Optional[Tuple[float, str, str]] = None  # score, answer, source
+
         for vid in self.list_volumes() or ["01"]:
             try:
                 for row in load_train_jsonl(vid):
-                    inst = (row.get("instruction") or row.get("input") or "").strip().lower()
-                    if inst == low:
+                    inst = row.get("instruction") or row.get("input") or ""
+                    sim = _similarity(q, inst)
+                    if sim >= 0.99:
                         return {
                             "answer": row.get("output"),
                             "source": f"train:{vid}",
                             "matched": True,
+                            "score": sim,
                         }
+                    if sim >= 0.72 and (best is None or sim > best[0]):
+                        best = (sim, str(row.get("output")), f"train:{vid}:fuzzy")
                 for row in load_eval_jsonl(vid):
-                    qq = (row.get("question") or row.get("instruction") or "").strip().lower()
-                    if qq == low:
+                    qq = row.get("question") or row.get("instruction") or ""
+                    sim = _similarity(q, qq)
+                    ans = row.get("answer") or row.get("output")
+                    if sim >= 0.99:
                         return {
-                            "answer": row.get("answer") or row.get("output"),
+                            "answer": ans,
                             "source": f"eval:{vid}",
                             "matched": True,
+                            "score": sim,
                         }
+                    if sim >= 0.72 and (best is None or sim > best[0]):
+                        best = (sim, str(ans), f"eval:{vid}:fuzzy")
             except Exception:
                 pass
 
         if lesson_id:
             lesson = self.load(lesson_id)
             for qa in lesson.questions:
-                if qa.get("question", "").lower() in low or low in qa.get("question", "").lower():
-                    return {"answer": qa.get("answer"), "source": f"lesson:{lesson_id}", "matched": True}
+                sim = _similarity(q, qa.get("question") or "")
+                if sim >= 0.7:
+                    return {
+                        "answer": qa.get("answer"),
+                        "source": f"lesson:{lesson_id}",
+                        "matched": True,
+                        "score": sim,
+                    }
 
-        # Category membership pattern
+        # yes/no object existence patterns
+        m_obj = re.search(r"(.+?)\s+(obyektdirmi|mövcuddurmu|varlıqdır mı|varlıqdırımı)", low)
+        if m_obj:
+            entity = m_obj.group(1).strip()
+            if entity in {"kvadrat dairə", "square circle"}:
+                return {"answer": "Xeyr.", "source": "rule:nonexist", "matched": True}
+            cls = self.classify(entity)
+            if cls == "Mövcud deyil":
+                return {"answer": "Xeyr.", "source": "classify", "matched": True}
+            return {"answer": "Bəli.", "source": "classify", "matched": True}
+
         m = re.search(r"(.+?)\s+hansı\s+kateqoriy", low)
         if m and self._graph:
             entity = m.group(1).strip()
@@ -519,6 +547,14 @@ class CurriculumEngine:
                             "source": "graph",
                             "matched": True,
                         }
+
+        if best and best[0] >= 0.72:
+            return {
+                "answer": best[1],
+                "source": best[2],
+                "matched": True,
+                "score": best[0],
+            }
 
         if self._facts:
             hits = self._facts.search(q, top_k=5)
