@@ -1,4 +1,4 @@
-"""Memory Manager – layers + promotion + unified retrieve (Faza 4)."""
+"""Memory Manager – layers + promotion + unified retrieve."""
 
 from __future__ import annotations
 
@@ -20,8 +20,6 @@ except ImportError:
 
 
 class MemoryManager:
-    """Vahid yaddaş interfeysi."""
-
     def __init__(self, working_capacity: int = 32, working_ttl: int = 1800):
         self.working = WorkingMemory(capacity=working_capacity, ttl_seconds=working_ttl)
         self.semantic = SemanticMemory()
@@ -30,14 +28,9 @@ class MemoryManager:
         self.long_term = LongTermMemory() if LongTermMemory else None
         self.episodic = EpisodicMemory() if EpisodicMemory else None
         self._retriever = UnifiedRetriever()
-        logger.info("MemoryManager initialized (Faza 4).")
+        logger.info("MemoryManager initialized.")
 
     def remember(self, text: str, kind: str = "vector", **kwargs) -> str:
-        """
-        kind:
-          working | vector | semantic | long_term | episodic
-          verified=True (default) — validated bilik
-        """
         verified = kwargs.get("verified", True)
         if kind == "semantic":
             return self.semantic.store_fact(
@@ -57,9 +50,7 @@ class MemoryManager:
                 return self.episodic.store(text, metadata=kwargs.get("metadata") or {})
             except Exception:
                 pass
-        # default vector – yalnız verified (promotion path)
         if not verified and kind == "vector":
-            # unverified yalnız working-ə
             return self.working.add(text, tag="unverified", importance=0.3)
         doc_id = self.vector.add(text, metadata=kwargs.get("metadata"))
         event_bus.publish("MemoryUpdated", {"kind": kind, "id": doc_id}, source="memory")
@@ -76,9 +67,13 @@ class MemoryManager:
         to_vector: bool = True,
         to_episodic: bool = True,
     ) -> Dict[str, Any]:
-        """Yalnız LearningEngine validated sonrası çağırılmalıdır."""
         out: Dict[str, Any] = {"content": content[:120], "actions": []}
-        meta = {"source": source, "confidence": confidence, "learning_id": learning_id, "verified": True}
+        meta = {
+            "source": source,
+            "confidence": confidence,
+            "learning_id": learning_id,
+            "verified": True,
+        }
 
         if to_vector:
             try:
@@ -89,8 +84,9 @@ class MemoryManager:
 
         if to_semantic:
             try:
-                # sadə triple: content as object of "learned"
-                fid = self.semantic.store_fact("Leon", "learned", content[:200], confidence=confidence)
+                fid = self.semantic.store_fact(
+                    "Leon", "learned", content[:200], confidence=confidence
+                )
                 out["actions"].append({"layer": "semantic", "id": fid})
             except Exception as e:
                 out["actions"].append({"layer": "semantic", "error": str(e)})
@@ -102,12 +98,10 @@ class MemoryManager:
             except Exception as e:
                 out["actions"].append({"layer": "episodic", "error": str(e)})
 
-        # working-dən unverified təmizləmə cəhdi
         try:
-            for item in list(self.working.get_by_tag("unverified")):
-                if str(item.get("content"))[:80] == content[:80]:
-                    # cannot delete by id easily if no API – skip
-                    pass
+            removed = self.working.remove_by_content_prefix(content, tag="unverified")
+            if removed:
+                out["actions"].append({"layer": "working", "removed_unverified": removed})
         except Exception:
             pass
 
@@ -130,7 +124,6 @@ class MemoryManager:
         return results
 
     def retrieve(self, query: str, top_k: int = 8, **kw) -> Dict[str, Any]:
-        """Vahid ranked retrieval."""
         return self._retriever.retrieve(query, top_k=top_k, **kw)
 
     def stats(self) -> Dict[str, Any]:
@@ -138,6 +131,7 @@ class MemoryManager:
             "working": self.working.stats() if hasattr(self.working, "stats") else len(self.working),
             "vector": self.vector.count(),
             "semantic": len(self.semantic.all_facts()),
+            "vector_backend": self.vector.backend(),
             "long_term": self.long_term.get_stats()
             if self.long_term and hasattr(self.long_term, "get_stats")
             else {},

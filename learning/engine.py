@@ -1,6 +1,4 @@
-"""
-Learning Engine (spec 022) + validated promotion only (Faza 4).
-"""
+"""Learning Engine – registry-backed facts/graph, validated promotion."""
 
 from __future__ import annotations
 
@@ -73,9 +71,9 @@ class LearningEngine:
     def _backends(self):
         if self._facts is None:
             try:
-                from knowledge.facts import FactStore
+                from knowledge.registry import get_fact_store
 
-                self._facts = FactStore()
+                self._facts = get_fact_store()
             except Exception:
                 self._facts = None
         if self._memory is None:
@@ -87,9 +85,9 @@ class LearningEngine:
                 self._memory = None
         if self._graph is None:
             try:
-                from knowledge.graph import KnowledgeGraph
+                from knowledge.registry import get_graph
 
-                self._graph = KnowledgeGraph()
+                self._graph = get_graph()
             except Exception:
                 self._graph = None
 
@@ -132,7 +130,6 @@ class LearningEngine:
         if status == "validated":
             self._commit(rec)
         elif status == "pending":
-            # unverified → yalnız working (promotion yox)
             if self._memory:
                 try:
                     self._memory.remember(
@@ -182,10 +179,11 @@ class LearningEngine:
         return None
 
     def _commit(self, rec: LearningRecord) -> None:
-        """Validated → facts + promote memory layers."""
         if self._facts:
             try:
-                self._facts.add(rec.content, source=f"learning:{rec.source}", confidence=rec.confidence)
+                self._facts.add(
+                    rec.content, source=f"learning:{rec.source}", confidence=rec.confidence
+                )
             except Exception:
                 pass
         if self._memory:
@@ -198,21 +196,11 @@ class LearningEngine:
                 )
             except Exception as e:
                 logger.debug(f"promote_validated: {e}")
-                try:
-                    self._memory.remember(
-                        rec.content,
-                        kind="vector",
-                        metadata={"learning_id": rec.id, "confidence": rec.confidence},
-                        verified=True,
-                    )
-                except Exception:
-                    pass
         event_bus.publish("KnowledgeUpdated", {"id": rec.id}, source="learning_engine")
 
     def validate_record(self, record_id: str, accept: bool = True) -> Optional[LearningRecord]:
         rec = self._records.get(record_id)
         if not rec:
-            # quarantine-dən axtar
             for i, q in enumerate(self._quarantine):
                 if q.id == record_id:
                     rec = q

@@ -1,6 +1,4 @@
-"""
-Vector Memory – semantik axtarış + disk (Faza 1).
-"""
+"""Vector Memory – hybrid BOW + dense, disk persist."""
 
 from __future__ import annotations
 
@@ -103,17 +101,26 @@ class VectorMemory:
         return doc_id
 
     def search(self, query: str, top_k: int = 5) -> List[Tuple[str, float]]:
+        """Hybrid: max(dense, bow) + 0.15*min when both exist."""
         q_dense = self._try_dense(query)
         q_bow = _bow_embed(query)
         scored = []
 
         for doc in self._docs.values():
-            score = 0.0
+            bow_s = _cosine_bow(q_bow, doc.get("embedding_bow") or {})
+            dense_s = 0.0
             if q_dense and doc.get("embedding_dense"):
-                score = _cosine_dense(q_dense, doc["embedding_dense"])
+                dense_s = _cosine_dense(q_dense, doc["embedding_dense"])
+            if dense_s > 0 and bow_s > 0:
+                score = max(dense_s, bow_s) + 0.15 * min(dense_s, bow_s)
             else:
-                score = _cosine_bow(q_bow, doc.get("embedding_bow") or {})
-            if score > 0.05:
+                score = dense_s or bow_s
+            # exact/substring boost
+            qt = query.lower().strip()
+            dt = (doc.get("text") or "").lower()
+            if qt and (qt == dt or qt in dt):
+                score = max(score, 0.95 if qt == dt else 0.8)
+            if score > 0.04:
                 scored.append((doc["text"], float(score), doc["id"]))
 
         scored.sort(key=lambda x: x[1], reverse=True)
@@ -132,13 +139,12 @@ class VectorMemory:
 
     def backend(self) -> str:
         if self._llm_ok is True:
-            return "dense_llm"
+            return "hybrid_dense_bow"
         if self._llm_ok is False:
             return "bag_of_words"
         return "auto"
 
     def save(self) -> None:
-        # dense vectors can be large; still persist for restart
         write_json(self.path, {"docs": self._docs})
 
     def load(self) -> int:
