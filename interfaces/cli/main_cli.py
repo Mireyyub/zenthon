@@ -1,4 +1,4 @@
-"""Leon CLI – reason / retrieve / quarantine (Faza 4)."""
+"""Leon CLI – agents production/experimental (Faza 5)."""
 
 import argparse
 import sys
@@ -22,7 +22,6 @@ def parse_args():
     sub.add_parser("smoke")
     save_p = sub.add_parser("save")
     save_p.add_argument("--name", default="leon")
-    save_p.add_argument("--json", action="store_true")
     sub.add_parser("load")
 
     eval_p = sub.add_parser("eval")
@@ -42,24 +41,24 @@ def parse_args():
     think_p.add_argument("--mode", default="auto", choices=["auto", "cot", "tot", "sot"])
     think_p.add_argument("--goal", default=None)
     think_p.add_argument("--agent", default=None)
+    think_p.add_argument("--experimental", action="store_true")
     think_p.add_argument("--json", action="store_true")
 
-    ret_p = sub.add_parser("retrieve", help="Vahid memory/knowledge retrieve")
+    ret_p = sub.add_parser("retrieve")
     ret_p.add_argument("query", type=str)
     ret_p.add_argument("--top-k", type=int, default=8)
     ret_p.add_argument("--json", action="store_true")
 
-    q_p = sub.add_parser("quarantine", help="Unverified / rejected learning records")
-    q_p.add_argument("--accept", default=None, help="Record id qəbul et (validated)")
-    q_p.add_argument("--reject", default=None, help="Record id rədd et")
+    q_p = sub.add_parser("quarantine")
+    q_p.add_argument("--accept", default=None)
+    q_p.add_argument("--reject", default=None)
     q_p.add_argument("--json", action="store_true")
 
     agent_p = sub.add_parser("agent")
-    agent_p.add_argument(
-        "type",
-        choices=["coding", "research", "executor", "vision", "voice", "react", "pev", "reflexion"],
-    )
-    agent_p.add_argument("task", type=str)
+    agent_p.add_argument("type", nargs="?", default=None)
+    agent_p.add_argument("task", nargs="?", default=None)
+    agent_p.add_argument("--list", action="store_true")
+    agent_p.add_argument("--experimental", action="store_true")
     agent_p.add_argument("--json", action="store_true")
 
     teach_p = sub.add_parser("teach")
@@ -85,10 +84,8 @@ def _print_reason(result: dict):
     print(f"Confidence : {result.get('confidence')} ({result.get('confidence_label')})")
     print(f"Source     : {result.get('source')}")
     print(f"Trace ID   : {result.get('trace_id')}")
-    dec = result.get("decision") or {}
-    print(f"Decision   : {dec.get('action')}")
-    for e in (result.get("evidence") or [])[:6]:
-        print(f"  [{e.get('kind')}] {str(e.get('content'))[:100]}")
+    if result.get("agent"):
+        print(f"Agent      : {result['agent']}")
 
 
 class CLIController:
@@ -110,9 +107,7 @@ class CLIController:
     def cmd_smoke(self):
         from core.bootstrap import smoke_test
 
-        report = smoke_test()
-        print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
-        print("SMOKE:", "PASS" if report.get("overall_ok") else "FAIL")
+        print(json.dumps(smoke_test(), ensure_ascii=False, indent=2, default=str))
 
     def cmd_save(self, args):
         from core.bootstrap import save_state
@@ -131,7 +126,7 @@ class CLIController:
         if args.json:
             print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
             return
-        print(f"Pass rate : {report.get('pass_rate')} ({report.get('passed')}/{report.get('total')})")
+        print(f"Pass rate : {report.get('pass_rate')}")
 
     def cmd_reason(self, args):
         from brain.reasoning.engine import reasoning_engine
@@ -148,7 +143,13 @@ class CLIController:
         from brain.orchestrator import BrainOrchestrator
 
         orch = BrainOrchestrator(brain_name=config.ai_name)
-        result = orch.run(args.query, goal=args.goal, reasoning_mode=args.mode, agent_type=args.agent)
+        result = orch.run(
+            args.query,
+            goal=args.goal,
+            reasoning_mode=args.mode,
+            agent_type=args.agent,
+            allow_experimental_agent=args.experimental,
+        )
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
             return
@@ -161,9 +162,8 @@ class CLIController:
         if args.json:
             print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
             return
-        print(f"Query: {report.get('query')} | returned={report.get('returned')}")
         for c in report.get("candidates") or []:
-            print(f"  [{c.get('source')}|{c.get('score')}] {c.get('content')[:120]}")
+            print(f"  [{c.get('source')}|{c.get('score')}] {c.get('content')[:100]}")
 
     def cmd_quarantine(self, args):
         from learning.engine import LearningEngine
@@ -171,25 +171,56 @@ class CLIController:
         eng = LearningEngine()
         if args.accept:
             rec = eng.validate_record(args.accept, accept=True)
-            print(json.dumps(rec.to_dict() if rec else {"error": "not found"}, ensure_ascii=False, indent=2))
+            print(rec.to_dict() if rec else {"error": "not found"})
             return
         if args.reject:
             rec = eng.validate_record(args.reject, accept=False)
-            print(json.dumps(rec.to_dict() if rec else {"error": "not found"}, ensure_ascii=False, indent=2))
+            print(rec.to_dict() if rec else {"error": "not found"})
             return
-        data = {
-            "quarantine": eng.quarantine_list(),
-            "pending": eng.pending_list(),
-            "stats": eng.stats(),
-        }
-        print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+        print(
+            json.dumps(
+                {"quarantine": eng.quarantine_list(), "pending": eng.pending_list(), "stats": eng.stats()},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
 
     def cmd_agent(self, args):
         from agents.manager import agent_manager
 
-        agent = agent_manager.create(args.type)
+        if args.list or not args.type:
+            detailed = agent_manager.list_types_detailed()
+            if args.json:
+                print(json.dumps(detailed, ensure_ascii=False, indent=2))
+                return
+            for d in detailed:
+                flag = "PROD" if d.get("production") else "EXP"
+                print(f"  [{flag}] {d.get('type')}")
+            return
+
+        if not args.task:
+            print("agent <type> <task> lazımdır")
+            sys.exit(1)
+
+        agent = agent_manager.create(
+            args.type, allow_experimental=args.experimental or args.type in ("react", "coding")
+        )
+        # production types always allowed
         res = agent_manager.run(agent.id, args.task)
-        print(f"Success: {res.success}\n{res.output}")
+        if args.json:
+            print(
+                json.dumps(
+                    {"success": res.success, "output": res.output, "error": res.error, "metadata": res.metadata},
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                )
+            )
+            return
+        print(f"Success: {res.success}")
+        if res.error:
+            print(f"Error: {res.error}")
+        print(f"Output: {res.output}")
 
     def cmd_teach(self, args):
         from curriculum import CurriculumEngine
@@ -221,7 +252,6 @@ class CLIController:
             print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
             return
         print(f"Lessons {report.get('lessons_passed')}/{report.get('lessons_total')}")
-        print(f"Eval {(report.get('eval') or {}).get('pass_rate')}")
 
     def cmd_volumes(self):
         from curriculum import CurriculumEngine, load_volume

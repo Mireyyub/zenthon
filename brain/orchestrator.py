@@ -1,5 +1,5 @@
 """
-Brain Orchestrator (Leon) – Faza 3: ReasoningEngine vahid yol.
+Brain Orchestrator – think → optional agent → decision (Faza 5).
 """
 
 from __future__ import annotations
@@ -106,8 +106,10 @@ class BrainOrchestrator:
         archive_result: bool = False,
         checkpoint_name: Optional[str] = None,
         use_reasoning_engine: bool = True,
+        allow_experimental_agent: bool = False,
     ) -> Dict[str, Any]:
         query = input_data if isinstance(input_data, str) else str(input_data)
+        sess_ctx = ""
         if use_session:
             self.session.add("user", query)
             sess_ctx = self.session.as_context(8)
@@ -121,16 +123,16 @@ class BrainOrchestrator:
         if archival_hits:
             query_for_brain += "\n\nArxiv xatirələr:\n" + "\n".join(f"- {h}" for h in archival_hits)
 
+        # 1) THINK (ReasoningEngine)
         if use_reasoning_engine:
-            # Vahid yol: ReasoningEngine (curriculum → evidence → optional brain)
             rr = self.reasoning.reason(
-                query,  # curriculum match üçün təmiz sual
+                query,
                 strategy=reasoning_mode,
                 goal=goal,
                 use_brain=True,
                 reasoning_mode=None if reasoning_mode == "auto" else reasoning_mode,
             )
-            result = {
+            result: Dict[str, Any] = {
                 "conclusion": rr.get("answer"),
                 "answer": rr.get("answer"),
                 "confidence": rr.get("confidence"),
@@ -147,17 +149,6 @@ class BrainOrchestrator:
                 "conflict": rr.get("conflict"),
                 "name": self.brain_name,
             }
-            # session context ilə LLM əlavə yalnız curriculum miss + uzun kontekst
-            if use_session and sess_ctx and rr.get("source") in (None, "unknown", "llm"):
-                try:
-                    extra = self.brain.think(
-                        query_for_brain, goal=goal, reasoning_mode=reasoning_mode, use_knowledge=True
-                    )
-                    if extra.get("conclusion") and not rr.get("answer"):
-                        result["conclusion"] = extra.get("conclusion")
-                        result["llm_used"] = True
-                except Exception:
-                    pass
         else:
             result = self.brain.think(
                 query_for_brain,
@@ -166,20 +157,30 @@ class BrainOrchestrator:
                 use_knowledge=True,
             )
 
+        # 2) OPTIONAL AGENT (production by default)
         if agent_type and self.agents:
             try:
-                agent = self.agents.create(agent_type)
+                agent = self.agents.create(
+                    agent_type, allow_experimental=allow_experimental_agent
+                )
                 task = result.get("conclusion") or query
-                agent_result = self.agents.run(agent.id, task, context=agent_context or {})
+                agent_result = self.agents.run(
+                    agent.id, str(task), context=agent_context or {}
+                )
                 result["agent"] = {
                     "type": agent_type,
                     "success": agent_result.success,
                     "output": agent_result.output,
                     "metadata": agent_result.metadata,
+                    "error": agent_result.error,
                 }
+                # agent uğurlu olsa conclusion-u zənginləşdir
+                if agent_result.success and agent_result.output is not None:
+                    result["agent_output"] = agent_result.output
             except Exception as e:
                 result["agent"] = {"type": agent_type, "success": False, "error": str(e)}
 
+        # 3) HITL
         if self._hitl:
             accepted = self._hitl(result)
             result["hitl_accepted"] = bool(accepted)
@@ -226,6 +227,7 @@ class BrainOrchestrator:
                 "confidence": result.get("confidence"),
                 "source": result.get("source"),
                 "trace_id": result.get("trace_id"),
+                "agent": agent_type,
                 "name": self.brain_name,
             },
             source="orchestrator",
@@ -237,9 +239,15 @@ class BrainOrchestrator:
         return await loop.run_in_executor(None, lambda: self.run(*args, **kwargs))
 
     def status(self) -> Dict[str, Any]:
+        types = []
+        if self.agents:
+            try:
+                types = self.agents.list_types_detailed()
+            except Exception:
+                types = self.agents.list_types()
         return {
             "brain": self.brain.get_state(),
-            "agents_available": self.agents.list_types() if self.agents else [],
+            "agents": types,
             "memory_stats": self.memory.stats() if self.memory else {},
             "session_turns": len(self.session.turns),
             "archival_count": self.archival.count(),
