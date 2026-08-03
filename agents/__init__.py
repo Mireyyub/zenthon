@@ -1,14 +1,6 @@
-"""Zenthon Agent System."""
+"""Leon Agents – production: react, coding; digərləri experimental."""
 
-from agents.manager import AgentManager, agent_manager
+from agents.manager import agent_manager, AgentManager
 from agents.base import BaseAgent, AgentResult
-from agents.crew import Crew, default_research_crew
 
-__all__ = [
-    "AgentManager",
-    "agent_manager",
-    "BaseAgent",
-    "AgentResult",
-    "Crew",
-    "default_research_crew",
-]
+__all__ = ["agent_manager", "AgentManager", "BaseAgent", "AgentResult"]
