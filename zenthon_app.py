@@ -1,87 +1,106 @@
 """
-Leon AI Platform – Full Bootstrap.
+Leon AI Platform – unified entrypoint (Faza 0).
 
     python zenthon_app.py
+    python zenthon_app.py --bootstrap
+    python zenthon_app.py --smoke
+    python zenthon_app.py --status
 """
 
-from core import kernel, event_bus, service_registry, logger
-from agents.manager import agent_manager
-from tools import tool_registry
-from memory import MemoryManager
-from knowledge import KnowledgeGraph, FactStore, KnowledgeRetrieval
-from learning import FeedbackCollector, PerformanceEvaluator, SelfLearning
-from security import PermissionManager, AuditLog, Sandbox
+from __future__ import annotations
+
+import argparse
+import json
+import sys
 
 
-def main():
+def main(argv: list | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Leon AI Platform")
+    parser.add_argument("--bootstrap", action="store_true", help="Curriculum + genome bootstrap")
+    parser.add_argument("--smoke", action="store_true", help="Faza 0 smoke test")
+    parser.add_argument("--status", action="store_true", help="Status JSON")
+    parser.add_argument("--volume", default="01", help="Curriculum volume for bootstrap")
+    parser.add_argument("--no-llm-check", action="store_true", help="Skip Ollama/LLM probe")
+    args = parser.parse_args(argv)
+
+    from core.bootstrap import start_leon, leon_status, smoke_test
+    from core.config import config
+    from core.kernel import kernel
+
     print("=" * 64)
-    print("  Leon AI Platform – Full Stack")
+    print(f"  {config.ai_name} AI Platform")
     print("=" * 64)
 
-    kernel.initialize()
-    kernel.start()
-    print(f"\n[Core] State: {kernel.status()['state']}")
-    print(f"[Core] Services: {', '.join(kernel.status()['services'])}")
+    if args.smoke:
+        report = smoke_test()
+        print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+        print("=" * 64)
+        return 0 if report.get("overall_ok") else 1
 
-    brain = service_registry.get("brain")
-    print(f"\n[Brain] {brain}")
+    if args.status:
+        print(json.dumps(leon_status(), ensure_ascii=False, indent=2, default=str))
+        return 0
 
-    mem = MemoryManager()
-    service_registry.register("memory", mem)
-    mem.remember("Leon modul əsaslı AI platformasıdır", kind="vector")
-    mem.remember("Python", kind="semantic", subject="Leon", predicate="uses", obj="Python")
-    print(f"[Memory] Stats: {mem.stats()}")
-
-    kg = KnowledgeGraph()
-    facts = FactStore()
-    kr = KnowledgeRetrieval(graph=kg, facts=facts)
-    kr.add_knowledge("Leon has a ThinkingBrain", entities=["Leon", "ThinkingBrain"])
-    facts.add("Ollama provides local LLM inference")
-    service_registry.register("knowledge", kr)
-    print(f"[Knowledge] Graph: {kg.stats()}, Facts: {len(facts.all())}")
-
-    fb = FeedbackCollector()
-    ev = PerformanceEvaluator()
-    sl = SelfLearning(feedback=fb, evaluator=ev)
-    fb.add("Yaxşı cavab", score=0.8)
-    fb.add("Qısa oldu", score=-0.2)
-    sl.learn_from_feedback()
-    print(f"[Learning] {sl.suggest_improvement()}")
-
-    print(f"\n[Agents] Types: {agent_manager.list_types()}")
-    coder = agent_manager.create("coding", name="DevCoder")
-    ar = agent_manager.run(coder.id, "Sadə faktorial funksiyası yaz")
-    print(f"[Agents] CodingAgent success={ar.success}")
-
-    perms = PermissionManager()
-    audit = AuditLog()
-    service_registry.register("permissions", perms)
-    service_registry.register("audit", audit)
-    audit.log("platform_start", user="system")
-    print(f"[Security] user can brain.think: {perms.check('default', 'brain.think')}")
-
-    print(f"\n[Tools] {[t['name'] for t in tool_registry.list_tools()]}")
-
-    print("\n--- Integrated Think (Leon) ---")
-    result = brain.think(
-        "Leon platformasının əsas üstünlükləri nələrdir?",
-        goal="Qısa strukturlaşdırılmış cavab",
-        reasoning_mode="auto",
+    report = start_leon(
+        bootstrap_curriculum=args.bootstrap,
+        volume_id=args.volume,
+        check_llm=not args.no_llm_check,
     )
-    print(f"Mode       : {result['reasoning_mode']}")
-    print(f"Confidence : {result['confidence']}")
-    print(f"Decision   : {result['decision']['action']} (risk={result['decision'].get('risk')})")
-    print(f"Conclusion : {result['conclusion'][:200]}")
 
-    recalled = mem.recall("Leon")
-    print(f"\n[Recall] vector hits: {len(recalled.get('vector', []))}")
+    print(f"\n[Paths] leon_dir={config.path.leon_dir}")
+    for step in report.get("steps") or []:
+        mark = "OK" if step.get("ok") else "FAIL"
+        print(f"  [{mark}] {step.get('step')}", end="")
+        if step.get("error"):
+            print(f" — {step['error']}")
+        else:
+            print()
+
+    if report.get("warnings"):
+        print("\n[Warnings]")
+        for w in report["warnings"]:
+            print(f"  - {w}")
+
+    if report.get("services"):
+        print("\n[Services]")
+        for k, v in report["services"].items():
+            print(f"  {k}: {v}")
+
+    llm = report.get("llm") or {}
+    print(f"\n[LLM] provider={llm.get('provider')} reachable={llm.get('reachable')} model={llm.get('model')}")
+
+    if report.get("curriculum"):
+        print(f"\n[Curriculum] {report['curriculum']}")
+
+    # Short think demo when not smoke
+    try:
+        brain = None
+        from core.service_registry import service_registry
+
+        try:
+            brain = service_registry.get("brain")
+        except Exception:
+            from brain import ThinkingBrain
+
+            brain = ThinkingBrain(name=config.ai_name)
+        result = brain.think("Leon kimdir?", reasoning_mode="auto")
+        print("\n--- Think ---")
+        print(f"Mode       : {result.get('reasoning_mode')}")
+        print(f"Confidence : {result.get('confidence')}")
+        print(f"LLM used   : {result.get('llm_used')}")
+        print(f"Conclusion : {str(result.get('conclusion') or '')[:240]}")
+    except Exception as e:
+        print(f"\n[Think] skipped: {e}")
 
     print("\n--- Shutdown ---")
-    audit.log("platform_shutdown", user="system")
-    kernel.shutdown()
-    print("Leon stopped cleanly.")
+    try:
+        kernel.shutdown()
+    except Exception:
+        pass
+    print(f"{config.ai_name} stopped.")
     print("=" * 64)
+    return 0 if report.get("ok") else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
