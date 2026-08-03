@@ -1,13 +1,15 @@
 """
-Leon GUI – ThinkingBrain inteqrasiyalı interfeys.
+Leon GUI – yalnız işlək tablar: Think | Teach | Status (Faza 7).
 """
 
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
-import threading
-import queue
+from __future__ import annotations
+
 import json
-from typing import Optional, Dict, Any
+import queue
+import threading
+import tkinter as tk
+from tkinter import messagebox, scrolledtext, ttk
+from typing import Any, Dict, Optional
 
 from core.logger import logger
 
@@ -16,7 +18,7 @@ class LeonApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Leon AI Platform")
-        self.root.geometry("1100x780")
+        self.root.geometry("1000x720")
         self._orch = None
         self.log_queue: queue.Queue = queue.Queue()
 
@@ -27,12 +29,14 @@ class LeonApp:
         self._create_notebook()
         self._create_status_bar()
         self.root.after(100, self._process_log_queue)
-        logger.info("Leon GUI initialized")
+        logger.info("Leon GUI initialized (Faza 7)")
 
     def _orch_lazy(self):
         if self._orch is None:
             from brain.orchestrator import BrainOrchestrator
-            self._orch = BrainOrchestrator(brain_name="Leon")
+            from core.config import config
+
+            self._orch = BrainOrchestrator(brain_name=getattr(config, "ai_name", "Leon") or "Leon")
         return self._orch
 
     def _configure_styles(self) -> None:
@@ -42,7 +46,6 @@ class LeonApp:
         except Exception:
             pass
         style.configure("TButton", padding=6)
-        style.configure("TLabel", padding=4)
 
     def _create_menu(self) -> None:
         menubar = tk.Menu(self.root)
@@ -57,83 +60,83 @@ class LeonApp:
     def _create_notebook(self) -> None:
         self.notebook = ttk.Notebook(self.main_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True)
-        self._create_brain_tab()
-        self._create_data_tab()
-        self._create_train_tab()
-        self._create_logs_tab()
+        self._create_think_tab()
+        self._create_teach_tab()
+        self._create_status_tab()
 
-    def _create_brain_tab(self) -> None:
+    def _create_think_tab(self) -> None:
         frame = ttk.Frame(self.notebook)
-        self.notebook.add(frame, text="Leon")
+        self.notebook.add(frame, text="Think")
 
-        top = ttk.LabelFrame(frame, text="Leon · ThinkingBrain")
+        top = ttk.LabelFrame(frame, text="Leon · Reasoning")
         top.pack(fill=tk.X, padx=8, pady=8)
 
-        ttk.Label(top, text="Sual / tapşırıq:").grid(row=0, column=0, sticky=tk.W, padx=4, pady=4)
-        self.brain_query = scrolledtext.ScrolledText(top, height=4, wrap=tk.WORD)
-        self.brain_query.grid(row=0, column=1, columnspan=3, sticky=tk.EW, padx=4, pady=4)
+        ttk.Label(top, text="Sual:").grid(row=0, column=0, sticky=tk.W, padx=4, pady=4)
+        self.think_query = scrolledtext.ScrolledText(top, height=4, wrap=tk.WORD)
+        self.think_query.grid(row=0, column=1, columnspan=3, sticky=tk.EW, padx=4, pady=4)
 
         ttk.Label(top, text="Mode:").grid(row=1, column=0, sticky=tk.W, padx=4)
-        self.brain_mode = ttk.Combobox(top, values=["auto", "cot", "tot", "sot"], width=12)
-        self.brain_mode.set("auto")
-        self.brain_mode.grid(row=1, column=1, sticky=tk.W, padx=4)
+        self.think_mode = ttk.Combobox(top, values=["auto", "cot", "tot", "sot"], width=12)
+        self.think_mode.set("auto")
+        self.think_mode.grid(row=1, column=1, sticky=tk.W, padx=4)
 
-        ttk.Label(top, text="Goal:").grid(row=1, column=2, sticky=tk.W, padx=4)
-        self.brain_goal = ttk.Entry(top, width=40)
-        self.brain_goal.grid(row=1, column=3, sticky=tk.EW, padx=4)
+        ttk.Label(top, text="Agent:").grid(row=1, column=2, sticky=tk.W, padx=4)
+        self.think_agent = ttk.Combobox(top, values=["", "react", "coding"], width=12)
+        self.think_agent.set("")
+        self.think_agent.grid(row=1, column=3, sticky=tk.W, padx=4)
 
-        ttk.Label(top, text="Agent:").grid(row=2, column=0, sticky=tk.W, padx=4)
-        self.brain_agent = ttk.Combobox(
-            top,
-            values=["", "coding", "research", "executor", "react", "pev", "reflexion"],
-            width=12,
-        )
-        self.brain_agent.set("")
-        self.brain_agent.grid(row=2, column=1, sticky=tk.W, padx=4)
-
-        btn_row = ttk.Frame(top)
-        btn_row.grid(row=3, column=0, columnspan=4, pady=8)
-        ttk.Button(btn_row, text="Think", command=self._on_brain_think).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_row, text="Clear", command=self._on_brain_clear).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_row, text="Status", command=self._on_brain_status).pack(side=tk.LEFT, padx=4)
-
+        btn = ttk.Frame(top)
+        btn.grid(row=2, column=0, columnspan=4, pady=8)
+        ttk.Button(btn, text="Think", command=self._on_think).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn, text="Clear", command=self._on_think_clear).pack(side=tk.LEFT, padx=4)
         top.columnconfigure(1, weight=1)
         top.columnconfigure(3, weight=1)
 
         out = ttk.LabelFrame(frame, text="Nəticə")
         out.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-        self.brain_output = scrolledtext.ScrolledText(out, wrap=tk.WORD)
-        self.brain_output.pack(fill=tk.BOTH, expand=True)
+        self.think_output = scrolledtext.ScrolledText(out, wrap=tk.WORD)
+        self.think_output.pack(fill=tk.BOTH, expand=True)
 
-    def _create_data_tab(self) -> None:
+    def _create_teach_tab(self) -> None:
         frame = ttk.Frame(self.notebook)
-        self.notebook.add(frame, text="Data")
-        preview = ttk.LabelFrame(frame, text="Data Preview")
-        preview.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-        self.data_tree = ttk.Treeview(preview)
-        self.data_tree.pack(fill=tk.BOTH, expand=True)
-        ctrl = ttk.Frame(frame)
-        ctrl.pack(fill=tk.X, padx=8, pady=4)
-        ttk.Button(ctrl, text="Load CSV", command=self._on_load_data).pack(side=tk.LEFT, padx=4)
-        self.data_info_label = ttk.Label(ctrl, text="No data")
-        self.data_info_label.pack(side=tk.RIGHT)
+        self.notebook.add(frame, text="Teach")
 
-    def _create_train_tab(self) -> None:
-        frame = ttk.Frame(self.notebook)
-        self.notebook.add(frame, text="Train")
-        form = ttk.LabelFrame(frame, text="ML Training (CLI tövsiyə olunur)")
+        form = ttk.LabelFrame(frame, text="Curriculum")
         form.pack(fill=tk.X, padx=8, pady=8)
-        ttk.Label(
-            form,
-            text="Tam train üçün: python -m interfaces.cli.main_cli train --model linear_regression --data f.csv --target y",
-        ).pack(padx=8, pady=8)
 
-    def _create_logs_tab(self) -> None:
+        ttk.Label(form, text="Volume:").grid(row=0, column=0, padx=4, pady=4)
+        self.teach_volume = ttk.Combobox(form, values=["01", "02"], width=8)
+        self.teach_volume.set("01")
+        self.teach_volume.grid(row=0, column=1, padx=4)
+
+        ttk.Label(form, text="Lesson ID:").grid(row=0, column=2, padx=4)
+        self.teach_lesson = ttk.Entry(form, width=12)
+        self.teach_lesson.insert(0, "000001")
+        self.teach_lesson.grid(row=0, column=3, padx=4)
+
+        btn = ttk.Frame(form)
+        btn.grid(row=1, column=0, columnspan=4, pady=8)
+        ttk.Button(btn, text="Teach Lesson", command=self._on_teach_lesson).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn, text="Teach Volume", command=self._on_teach_volume).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn, text="Eval Volume", command=self._on_eval_volume).pack(side=tk.LEFT, padx=4)
+
+        out = ttk.LabelFrame(frame, text="Hesabat")
+        out.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.teach_output = scrolledtext.ScrolledText(out, wrap=tk.WORD)
+        self.teach_output.pack(fill=tk.BOTH, expand=True)
+
+    def _create_status_tab(self) -> None:
         frame = ttk.Frame(self.notebook)
-        self.notebook.add(frame, text="Logs")
-        self.log_display = scrolledtext.ScrolledText(frame)
-        self.log_display.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-        ttk.Button(frame, text="Clear", command=lambda: self.log_display.delete("1.0", tk.END)).pack(pady=4)
+        self.notebook.add(frame, text="Status")
+
+        btn = ttk.Frame(frame)
+        btn.pack(fill=tk.X, padx=8, pady=8)
+        ttk.Button(btn, text="Refresh Status", command=self._on_status).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn, text="Health", command=self._on_health).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn, text="LLM Check", command=self._on_llm).pack(side=tk.LEFT, padx=4)
+
+        self.status_output = scrolledtext.ScrolledText(frame, wrap=tk.WORD)
+        self.status_output.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
     def _create_status_bar(self) -> None:
         self.status_bar = ttk.Label(self.root, text="Leon Ready", relief=tk.SUNKEN, anchor=tk.W)
@@ -143,105 +146,167 @@ class LeonApp:
         try:
             while True:
                 msg = self.log_queue.get_nowait()
-                self.log_display.insert(tk.END, msg + "\n")
-                self.log_display.see(tk.END)
                 self.status_bar.config(text=msg[:120])
         except queue.Empty:
             pass
-        self.root.after(100, self._process_log_queue)
+        self.root.after(150, self._process_log_queue)
 
     def _log(self, msg: str) -> None:
         self.log_queue.put(msg)
 
-    def _on_brain_think(self) -> None:
-        query = self.brain_query.get("1.0", tk.END).strip()
+    def _set_text(self, widget: scrolledtext.ScrolledText, text: str) -> None:
+        widget.delete("1.0", tk.END)
+        widget.insert(tk.END, text)
+
+    def _on_think(self) -> None:
+        query = self.think_query.get("1.0", tk.END).strip()
         if not query:
-            messagebox.showwarning("Xəbərdarlıq", "Sual yazın")
+            messagebox.showwarning("Leon", "Sual yazın")
             return
-        mode = self.brain_mode.get() or "auto"
-        goal = self.brain_goal.get().strip() or None
-        agent = self.brain_agent.get().strip() or None
-        self._log(f"Leon think | mode={mode} agent={agent or '-'}")
-        self.brain_output.delete("1.0", tk.END)
-        self.brain_output.insert(tk.END, "Leon düşünür...\n")
+        mode = self.think_mode.get() or "auto"
+        agent = self.think_agent.get().strip() or None
+        self._set_text(self.think_output, "Leon düşünür...\n")
+        self._log(f"Think mode={mode}")
 
         def worker():
             try:
-                orch = self._orch_lazy()
-                result = orch.run(
+                result = self._orch_lazy().run(
                     query,
-                    goal=goal,
                     reasoning_mode=mode,
                     agent_type=agent,
                     use_session=True,
-                    archive_result=True,
                 )
                 text = (
-                    f"Mode       : {result.get('reasoning_mode')}\n"
-                    f"Confidence : {result.get('confidence')}\n"
+                    f"Answer     : {result.get('answer') or result.get('conclusion')}\n"
+                    f"Confidence : {result.get('confidence')} ({result.get('confidence_label')})\n"
+                    f"Source     : {result.get('source')}\n"
+                    f"Trace ID   : {result.get('trace_id')}\n"
                     f"LLM used   : {result.get('llm_used')}\n"
-                    f"Decision   : {result.get('decision')}\n"
-                    f"Reflection : {result.get('reflection')}\n"
-                    f"\n--- Conclusion ---\n{result.get('conclusion')}\n"
+                    f"Decision   : {(result.get('decision') or {}).get('action')}\n"
                 )
+                if result.get("evidence"):
+                    text += "\nEvidence:\n"
+                    for e in result["evidence"][:8]:
+                        text += f"  [{e.get('kind')}] {str(e.get('content'))[:120]}\n"
                 if result.get("agent"):
-                    text += f"\n--- Agent ---\n{json.dumps(result['agent'], ensure_ascii=False, indent=2, default=str)}\n"
-                self.root.after(0, lambda: self._show_brain_result(text))
-                self.root.after(0, lambda: self._log("Leon think completed"))
+                    text += f"\nAgent:\n{json.dumps(result['agent'], ensure_ascii=False, indent=2, default=str)}\n"
+                self.root.after(0, lambda: self._set_text(self.think_output, text))
+                self.root.after(0, lambda: self._log("Think OK"))
             except Exception as e:
-                self.root.after(0, lambda: self._show_brain_result(f"Xəta: {e}"))
-                self.root.after(0, lambda: self._log(f"Leon error: {e}"))
+                self.root.after(0, lambda: self._set_text(self.think_output, f"Xəta: {e}"))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _show_brain_result(self, text: str) -> None:
-        self.brain_output.delete("1.0", tk.END)
-        self.brain_output.insert(tk.END, text)
+    def _on_think_clear(self) -> None:
+        self.think_query.delete("1.0", tk.END)
+        self.think_output.delete("1.0", tk.END)
 
-    def _on_brain_clear(self) -> None:
-        self.brain_query.delete("1.0", tk.END)
-        self.brain_output.delete("1.0", tk.END)
-        self.brain_goal.delete(0, tk.END)
+    def _on_teach_lesson(self) -> None:
+        lid = self.teach_lesson.get().strip() or "000001"
+        vid = self.teach_volume.get().strip() or "01"
+        self._set_text(self.teach_output, f"Teaching {lid}...\n")
 
-    def _on_brain_status(self) -> None:
         def worker():
             try:
-                st = self._orch_lazy().status()
-                text = json.dumps(st, ensure_ascii=False, indent=2, default=str)
-                self.root.after(0, lambda: self._show_brain_result(text))
+                from curriculum import CurriculumEngine
+                from core.bootstrap import save_state
+
+                eng = CurriculumEngine()
+                report = eng.teach(lid, volume_id=vid)
+                try:
+                    save_state("gui_teach")
+                except Exception:
+                    pass
+                text = json.dumps(report, ensure_ascii=False, indent=2, default=str)
+                self.root.after(0, lambda: self._set_text(self.teach_output, text))
+                self.root.after(0, lambda: self._log(f"Taught {lid}"))
             except Exception as e:
-                self.root.after(0, lambda: self._show_brain_result(str(e)))
+                self.root.after(0, lambda: self._set_text(self.teach_output, str(e)))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_load_data(self) -> None:
-        path = filedialog.askopenfilename(filetypes=[("CSV", "*.csv"), ("All", "*.*")])
-        if not path:
-            return
-        try:
-            import pandas as pd
+    def _on_teach_volume(self) -> None:
+        vid = self.teach_volume.get().strip() or "01"
+        self._set_text(self.teach_output, f"Teaching volume {vid}...\n")
 
-            data = pd.read_csv(path)
-            for item in self.data_tree.get_children():
-                self.data_tree.delete(item)
-            self.data_tree["columns"] = list(data.columns)
-            self.data_tree["show"] = "headings"
-            for col in data.columns:
-                self.data_tree.heading(col, text=col)
-                self.data_tree.column(col, width=100)
-            for _, row in data.head(100).iterrows():
-                self.data_tree.insert("", "end", values=list(row))
-            self.data_info_label.config(text=f"{len(data)} rows")
-            self._log(f"Loaded {path}")
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
+        def worker():
+            try:
+                from curriculum import CurriculumEngine
+                from core.bootstrap import save_state
+
+                report = CurriculumEngine().teach_volume(vid)
+                try:
+                    save_state("gui_teach_volume")
+                except Exception:
+                    pass
+                text = json.dumps(report, ensure_ascii=False, indent=2, default=str)
+                self.root.after(0, lambda: self._set_text(self.teach_output, text))
+            except Exception as e:
+                self.root.after(0, lambda: self._set_text(self.teach_output, str(e)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_eval_volume(self) -> None:
+        vid = self.teach_volume.get().strip() or "01"
+
+        def worker():
+            try:
+                from evaluation.runner import evaluate_curriculum
+
+                report = evaluate_curriculum(vid, teach_first=False)
+                text = json.dumps(report, ensure_ascii=False, indent=2, default=str)
+                self.root.after(0, lambda: self._set_text(self.teach_output, text))
+            except Exception as e:
+                self.root.after(0, lambda: self._set_text(self.teach_output, str(e)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_status(self) -> None:
+        def worker():
+            try:
+                from core.bootstrap import leon_status
+
+                text = json.dumps(leon_status(), ensure_ascii=False, indent=2, default=str)
+                self.root.after(0, lambda: self._set_text(self.status_output, text))
+            except Exception as e:
+                self.root.after(0, lambda: self._set_text(self.status_output, str(e)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_health(self) -> None:
+        def worker():
+            try:
+                from interfaces.api.health import health_report
+
+                text = json.dumps(health_report(), ensure_ascii=False, indent=2, default=str)
+                self.root.after(0, lambda: self._set_text(self.status_output, text))
+            except Exception as e:
+                self.root.after(0, lambda: self._set_text(self.status_output, str(e)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_llm(self) -> None:
+        def worker():
+            try:
+                from brain.llm.client import get_llm_client
+
+                text = json.dumps(
+                    get_llm_client(force_new=True).health_check(),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                self.root.after(0, lambda: self._set_text(self.status_output, text))
+            except Exception as e:
+                self.root.after(0, lambda: self._set_text(self.status_output, str(e)))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _on_about(self) -> None:
         messagebox.showinfo(
-            "About Leon",
+            "Leon",
             "Leon AI Platform\n\n"
-            "ThinkingBrain + Agents + Memory + GraphRAG\n"
-            "Ollama lokal LLM · CLI · API · GUI\n\n"
+            "Think · Teach · Status\n"
+            "CLI · FastAPI · GUI\n\n"
             "https://github.com/Mireyyub/zenthon",
         )
 
