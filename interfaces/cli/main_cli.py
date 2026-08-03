@@ -1,53 +1,55 @@
 """
-Main CLI – ML training + ThinkingBrain / Orchestrator əmrləri.
+Leon CLI – ML training + ThinkingBrain / Orchestrator əmrləri.
 """
 
 import argparse
 import sys
 import json
-from typing import Optional, Dict, Any
 
 from core.logger import logger
-from core.config import config
 from core.kernel import kernel
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Zenthon AI Platform CLI",
+        description="Leon AI Platform CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python -m interfaces.cli.main_cli think "Süni intellekt nədir?"
+  python -m interfaces.cli.main_cli think "Leon kimdir?"
   python -m interfaces.cli.main_cli think "Plan yaz" --mode sot --goal "MVP"
   python -m interfaces.cli.main_cli agent coding "Fibonacci funksiyası yaz"
+  python -m interfaces.cli.main_cli agent react "Cari vaxtı al"
   python -m interfaces.cli.main_cli status
+  python -m interfaces.cli.main_cli llm-check
   python -m interfaces.cli.main_cli train --model linear_regression --data train.csv --target y
         """,
     )
     sub = parser.add_subparsers(dest="command")
 
-    # ── think ──
-    think_p = sub.add_parser("think", help="ThinkingBrain ilə düşün")
+    think_p = sub.add_parser("think", help="Leon ThinkingBrain ilə düşün")
     think_p.add_argument("query", type=str, help="Sual / tapşırıq")
     think_p.add_argument("--mode", default="auto", choices=["auto", "cot", "tot", "sot"])
     think_p.add_argument("--goal", default=None)
-    think_p.add_argument("--agent", default=None, help="Əlavə agent: coding|research|executor|vision|voice")
-    think_p.add_argument("--json", action="store_true", help="JSON çıxış")
+    think_p.add_argument(
+        "--agent",
+        default=None,
+        help="coding|research|executor|vision|voice|react|pev|reflexion",
+    )
+    think_p.add_argument("--json", action="store_true")
 
-    # ── agent ──
     agent_p = sub.add_parser("agent", help="Agent işə sal")
-    agent_p.add_argument("type", choices=["coding", "research", "executor", "vision", "voice"])
+    agent_p.add_argument(
+        "type",
+        choices=["coding", "research", "executor", "vision", "voice", "react", "pev", "reflexion"],
+    )
     agent_p.add_argument("task", type=str)
     agent_p.add_argument("--json", action="store_true")
 
-    # ── status ──
     sub.add_parser("status", help="Platform status")
-
-    # ── info ──
     sub.add_parser("info", help="Sistem məlumatı")
+    sub.add_parser("llm-check", help="LLM / Ollama sağlamlıq yoxlaması")
 
-    # ── train (mövcud) ──
     train_p = sub.add_parser("train", help="Model öyrət")
     train_p.add_argument("--model", required=True, choices=["linear_regression", "random_forest", "kmeans", "simple_nn"])
     train_p.add_argument("--data", required=True)
@@ -58,13 +60,11 @@ Examples:
     train_p.add_argument("--learning_rate", type=float, default=0.001)
     train_p.add_argument("--save_model", default=None)
 
-    # ── predict ──
     pred_p = sub.add_parser("predict", help="Proqnoz")
     pred_p.add_argument("--model", required=True)
     pred_p.add_argument("--data", required=True)
     pred_p.add_argument("--output", default=None)
 
-    # ── list_models ──
     sub.add_parser("list_models", help="Yüklənmiş modellər")
 
     return parser.parse_args()
@@ -78,7 +78,7 @@ class CLIController:
     def cmd_think(self, args):
         from brain.orchestrator import BrainOrchestrator
 
-        orch = BrainOrchestrator()
+        orch = BrainOrchestrator(brain_name="Leon")
         result = orch.run(
             args.query,
             goal=args.goal,
@@ -88,6 +88,7 @@ class CLIController:
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
             return
+        print(f"AI         : Leon")
         print(f"Mode       : {result.get('reasoning_mode')}")
         print(f"Confidence : {result.get('confidence')}")
         print(f"Decision   : {result.get('decision', {}).get('action')}")
@@ -104,7 +105,19 @@ class CLIController:
         agent = agent_manager.create(args.type)
         res = agent_manager.run(agent.id, args.task)
         if args.json:
-            print(json.dumps({"success": res.success, "output": res.output, "error": res.error, "metadata": res.metadata}, ensure_ascii=False, indent=2, default=str))
+            print(
+                json.dumps(
+                    {
+                        "success": res.success,
+                        "output": res.output,
+                        "error": res.error,
+                        "metadata": res.metadata,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                )
+            )
             return
         print(f"Success : {res.success}")
         if res.error:
@@ -115,19 +128,30 @@ class CLIController:
         from brain.orchestrator import BrainOrchestrator
 
         kernel.initialize()
-        orch = BrainOrchestrator()
+        orch = BrainOrchestrator(brain_name="Leon")
         st = orch.status()
         print(json.dumps(st, ensure_ascii=False, indent=2, default=str))
 
     def cmd_info(self):
         kernel.initialize()
         info = kernel.get_system_resources()
-        print("Zenthon System Info")
+        print("Leon System Info")
         print(f"  State : {info.get('state')}")
         print(f"  CPU   : {info.get('cpu_percent')}%")
         mem = info.get("memory") or {}
         print(f"  RAM   : {mem.get('percent')}%")
         print(f"  Services: {kernel.status().get('services')}")
+
+    def cmd_llm_check(self):
+        from brain.llm.client import get_llm_client
+
+        client = get_llm_client()
+        report = client.health_check()
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+
+        # embedding probe
+        emb = client.embed("Leon AI platform test")
+        print(f"embedding_dims: {len(emb) if emb else None}")
 
     def train_model(self, args):
         import pandas as pd
@@ -142,7 +166,9 @@ class CLIController:
         data = pd.read_csv(args.data)
         X = data.drop(columns=[args.target]).values
         y = data[args.target].values
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=args.test_size, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=args.test_size, random_state=42
+        )
         scaler = StandardScaler()
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.transform(X_test)
@@ -168,11 +194,13 @@ class CLIController:
         self.predictors[args.model] = ModelPredictor(model=model, model_type="sklearn")
         if args.save_model:
             import joblib
+
             joblib.dump(model, args.save_model)
             logger.info(f"Saved → {args.save_model}")
 
     def predict(self, args):
         import pandas as pd
+
         if args.model not in self.predictors:
             logger.error(f"Model yoxdur: {args.model}")
             return
@@ -199,6 +227,8 @@ def main():
             ctrl.cmd_status()
         elif args.command == "info":
             ctrl.cmd_info()
+        elif args.command == "llm-check":
+            ctrl.cmd_llm_check()
         elif args.command == "train":
             ctrl.train_model(args)
         elif args.command == "predict":
@@ -206,7 +236,7 @@ def main():
         elif args.command == "list_models":
             ctrl.list_models()
         else:
-            print("Əmr yoxdur. --help bax.")
+            print("Leon CLI – əmr yoxdur. --help bax.")
             sys.exit(1)
     except Exception as e:
         logger.error(f"Error: {e}")
