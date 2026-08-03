@@ -1,4 +1,4 @@
-"""Leon CLI – health + full ops (Faza 7)."""
+"""Leon CLI – health + omniverse (Faza 8)."""
 
 import argparse
 import sys
@@ -20,7 +20,7 @@ def parse_args():
     start_p.add_argument("--json", action="store_true")
 
     sub.add_parser("smoke")
-    sub.add_parser("health", help="Ollama + data + graph health")
+    sub.add_parser("health")
     save_p = sub.add_parser("save")
     save_p.add_argument("--name", default="leon")
     sub.add_parser("load")
@@ -79,6 +79,17 @@ def parse_args():
     pre.add_argument("plan_id")
     pre.add_argument("--reason", default="user")
     pre.add_argument("--json", action="store_true")
+
+    # Omniverse
+    ov = sub.add_parser("omniverse", help="Leon ↔ Omniverse bridge")
+    ov_sub = ov.add_subparsers(dest="ov_cmd")
+    ov_sub.add_parser("status")
+    ov_sub.add_parser("demo", help="Load stub demo scene")
+    ov_sub.add_parser("sync", help="Sync from live Kit stage")
+    ova = ov_sub.add_parser("ask")
+    ova.add_argument("question", type=str)
+    ova.add_argument("--json", action="store_true")
+    ov_sub.add_parser("inject", help="Scene → FactStore")
 
     teach_p = sub.add_parser("teach")
     teach_p.add_argument("lesson_id", nargs="?", default="000001")
@@ -262,6 +273,38 @@ class CLIController:
             return
         print("plan create|list|show|run|replan")
 
+    def cmd_omniverse(self, args):
+        from integrations.omniverse import OmniverseBridge
+
+        ov = OmniverseBridge()
+        cmd = args.ov_cmd
+        if cmd == "status" or cmd is None:
+            print(json.dumps(ov.status(), ensure_ascii=False, indent=2))
+            return
+        if cmd == "demo":
+            print(json.dumps(ov.load_stub_demo_scene(), ensure dual_ascii=False, indent=2))
+            print(json.dumps(ov.describe_scene(), ensure_ascii=False, indent=2))
+            return
+        if cmd == "sync":
+            print(json.dumps(ov.sync_from_stage(), ensure_ascii=False, indent=2))
+            return
+        if cmd == "inject":
+            n = ov.inject_scene_facts()
+            print(json.dumps({"injected": n, "status": ov.status()}, ensure_ascii=False, indent=2))
+            return
+        if cmd == "ask":
+            if not ov.list_objects():
+                ov.load_stub_demo_scene()
+            result = ov.ask_leon(args.question)
+            if getattr(args, "json", False):
+                print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+                return
+            _print_reason(result)
+            print(f"OV mode   : {(result.get('omniverse') or {}).get('mode')}")
+            print(f"Objects   : {result.get('scene_object_count')}")
+            return
+        print("omniverse status|demo|sync|inject|ask")
+
     def cmd_teach(self, args):
         from curriculum import CurriculumEngine
         from core.bootstrap import save_state
@@ -331,6 +374,9 @@ def main():
         cmd = args.command
         if cmd == "plan":
             ctrl.cmd_plan(args)
+            return
+        if cmd == "omniverse":
+            ctrl.cmd_omniverse(args)
             return
         mapping = {
             "start": lambda: ctrl.cmd_start(args),
