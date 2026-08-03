@@ -1,9 +1,5 @@
 """
-Reasoning Engine (spec 020) — LEON vahid düşüncə yolu (Faza 3).
-
-Pipeline:
-  Parse → Retrieve → Curriculum → (optional) Brain/LLM →
-  Rank/Conflict → Confidence → Decision → Trace persist
+Reasoning Engine (spec 020) — LEON vahid düşüncə yolu.
 """
 
 from __future__ import annotations
@@ -22,7 +18,7 @@ from brain.confidence import composite_confidence, action_from_confidence, label
 
 @dataclass
 class EvidenceItem:
-    kind: str  # curriculum | fact | graph | memory | llm
+    kind: str
     content: str
     weight: float = 0.5
     ref: str = ""
@@ -86,8 +82,6 @@ def _traces_dir() -> Path:
 
 
 class ReasoningEngine:
-    """Tək cognitive reasoning yolu."""
-
     def __init__(self, persist_traces: bool = True):
         self._traces: Dict[str, ReasoningTrace] = {}
         self._brain = None
@@ -103,12 +97,11 @@ class ReasoningEngine:
     ) -> Dict[str, Any]:
         trace_id = "TR-" + str(uuid.uuid4())[:8]
         evidence: List[EvidenceItem] = []
-        candidates: List[Tuple[str, str, float]] = []  # text, source, base_conf
+        candidates: List[Tuple[str, str, float]] = []
 
         strategy = self._pick_strategy(request, strategy)
         retrieved = self._retrieve(request, evidence)
 
-        # 1) Curriculum (highest priority knowledge)
         curr = self._try_curriculum(request)
         if curr:
             ans, src = curr
@@ -117,7 +110,6 @@ class ReasoningEngine:
                 EvidenceItem(kind="curriculum", content=f"{src}: {ans}", weight=0.95, ref=src)
             )
 
-        # 2) Brain / LLM only if curriculum miss or verify path
         llm_used = False
         brain_method = strategy
         if use_brain and (not candidates or reasoning_mode):
@@ -150,10 +142,8 @@ class ReasoningEngine:
             except Exception as e:
                 logger.warning(f"ReasoningEngine brain: {e}")
 
-        # 3) Conflict resolution
         selected, source, validation, conflict = self._resolve_conflict(candidates)
 
-        # 4) Confidence (vahid formula)
         eq = min(1.0, 0.35 + 0.12 * len(evidence) + (0.25 if retrieved else 0))
         src_rel = {
             "curriculum": 0.95,
@@ -236,10 +226,6 @@ class ReasoningEngine:
     def _resolve_conflict(
         self, candidates: List[Tuple[str, str, float]]
     ) -> Tuple[str, str, str, Optional[str]]:
-        """
-        Priority: curriculum > train/eval/facts > graph > llm.
-        Eyni prioritetdə ziddiyyət → UNKNOWN.
-        """
         if not candidates:
             return "UNKNOWN", "unknown", "unresolved", "Heç bir namizəd yoxdur"
 
@@ -254,14 +240,11 @@ class ReasoningEngine:
         }
 
         def prio(src: str) -> int:
-            key = src.split(":")[0]
-            return priority.get(key, 10)
+            return priority.get(src.split(":")[0], 10)
 
         candidates_sorted = sorted(candidates, key=lambda c: (prio(c[1]), c[2]), reverse=True)
-        best = candidates_sorted[0]
-        best_text, best_src, _ = best
+        best_text, best_src, _ = candidates_sorted[0]
 
-        # conflict: another high-priority answer disagrees (bəli vs xeyr)
         def polarity(t: str) -> Optional[str]:
             tl = t.lower().strip()
             if tl.startswith("bəli") or tl.startswith("yes"):
@@ -283,9 +266,9 @@ class ReasoningEngine:
     def _retrieve(self, query: str, evidence: List[EvidenceItem]) -> List[str]:
         hits: List[str] = []
         try:
-            from knowledge.facts import FactStore
+            from knowledge.registry import get_fact_store
 
-            for f in FactStore().search(query, top_k=5):
+            for f in get_fact_store().search(query, top_k=5):
                 stmt = f.get("statement", "")
                 hits.append(stmt)
                 evidence.append(
@@ -294,9 +277,9 @@ class ReasoningEngine:
         except Exception:
             pass
         try:
-            from knowledge.graph import KnowledgeGraph
+            from knowledge.registry import get_graph
 
-            kg = KnowledgeGraph()
+            kg = get_graph()
             for n in kg.query(query, top_k=5):
                 label = n.get("label", "")
                 hits.append(label)
@@ -335,16 +318,6 @@ class ReasoningEngine:
         s = (strategy or "auto").lower()
         if s in ("deduction", "induction", "abduction", "analogy"):
             return s
-        # map cot/tot/sot from CLI
-        if s in ("cot", "tot", "sot", "auto"):
-            low = request.lower()
-            if any(k in low for k in ("niyə", "why", "izah", "səbəb")):
-                return "abduction"
-            if any(k in low for k in ("ümumi", "pattern", "oxşar")):
-                return "induction"
-            if any(k in low for k in ("müqayisə", "analog")):
-                return "analogy"
-            return "deduction"
         low = request.lower()
         if any(k in low for k in ("niyə", "why", "izah", "səbəb")):
             return "abduction"
