@@ -1,4 +1,4 @@
-"""Leon CLI – agents production/experimental (Faza 5)."""
+"""Leon CLI – planner (Faza 6)."""
 
 import argparse
 import sys
@@ -52,7 +52,6 @@ def parse_args():
     q_p = sub.add_parser("quarantine")
     q_p.add_argument("--accept", default=None)
     q_p.add_argument("--reject", default=None)
-    q_p.add_argument("--json", action="store_true")
 
     agent_p = sub.add_parser("agent")
     agent_p.add_argument("type", nargs="?", default=None)
@@ -60,6 +59,31 @@ def parse_args():
     agent_p.add_argument("--list", action="store_true")
     agent_p.add_argument("--experimental", action="store_true")
     agent_p.add_argument("--json", action="store_true")
+
+    # Planner
+    plan_p = sub.add_parser("plan", help="Planner: create/list/run/replan")
+    plan_sub = plan_p.add_subparsers(dest="plan_cmd")
+
+    pc = plan_sub.add_parser("create")
+    pc.add_argument("--goal", required=True)
+    pc.add_argument("--curriculum", default=None, help="Volume id template e.g. 01")
+    pc.add_argument("--json", action="store_true")
+
+    plan_sub.add_parser("list")
+
+    ps = plan_sub.add_parser("show")
+    ps.add_argument("plan_id")
+    ps.add_argument("--json", action="store_true")
+
+    pr = plan_sub.add_parser("run")
+    pr.add_argument("plan_id")
+    pr.add_argument("--max-tasks", type=int, default=None)
+    pr.add_argument("--json", action="store_true")
+
+    pre = plan_sub.add_parser("replan")
+    pre.add_argument("plan_id")
+    pre.add_argument("--reason", default="user")
+    pre.add_argument("--json", action="store_true")
 
     teach_p = sub.add_parser("teach")
     teach_p.add_argument("lesson_id", nargs="?", default="000001")
@@ -84,8 +108,6 @@ def _print_reason(result: dict):
     print(f"Confidence : {result.get('confidence')} ({result.get('confidence_label')})")
     print(f"Source     : {result.get('source')}")
     print(f"Trace ID   : {result.get('trace_id')}")
-    if result.get("agent"):
-        print(f"Agent      : {result['agent']}")
 
 
 class CLIController:
@@ -177,50 +199,88 @@ class CLIController:
             rec = eng.validate_record(args.reject, accept=False)
             print(rec.to_dict() if rec else {"error": "not found"})
             return
-        print(
-            json.dumps(
-                {"quarantine": eng.quarantine_list(), "pending": eng.pending_list(), "stats": eng.stats()},
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        print(json.dumps({"quarantine": eng.quarantine_list(), "pending": eng.pending_list()}, ensure_ascii=False, indent=2))
 
     def cmd_agent(self, args):
         from agents.manager import agent_manager
 
         if args.list or not args.type:
-            detailed = agent_manager.list_types_detailed()
-            if args.json:
-                print(json.dumps(detailed, ensure_ascii=False, indent=2))
-                return
-            for d in detailed:
+            for d in agent_manager.list_types_detailed():
                 flag = "PROD" if d.get("production") else "EXP"
                 print(f"  [{flag}] {d.get('type')}")
             return
-
         if not args.task:
-            print("agent <type> <task> lazımdır")
+            print("agent <type> <task>")
             sys.exit(1)
-
         agent = agent_manager.create(
             args.type, allow_experimental=args.experimental or args.type in ("react", "coding")
         )
-        # production types always allowed
         res = agent_manager.run(agent.id, args.task)
         if args.json:
-            print(
-                json.dumps(
-                    {"success": res.success, "output": res.output, "error": res.error, "metadata": res.metadata},
-                    ensure_ascii=False,
-                    indent=2,
-                    default=str,
-                )
-            )
+            print(json.dumps({"success": res.success, "output": res.output, "error": res.error}, ensure_ascii=False, indent=2, default=str))
             return
-        print(f"Success: {res.success}")
-        if res.error:
-            print(f"Error: {res.error}")
-        print(f"Output: {res.output}")
+        print(f"Success: {res.success}\nOutput: {res.output}")
+
+    def cmd_plan(self, args):
+        from brain.planning import Planner, curriculum_learn_plan
+
+        p = Planner()
+        cmd = args.plan_cmd
+
+        if cmd == "create":
+            if args.curriculum:
+                plan = curriculum_learn_plan(args.curriculum)
+            else:
+                plan = p.create(goal=args.goal)
+            if args.json:
+                print(json.dumps(plan.to_dict(), ensure_ascii=False, indent=2, default=str))
+            else:
+                print(f"Created {plan.id} status={plan.status} tasks={len(plan.tasks)}")
+                print(f"Goal: {plan.goal}")
+            return
+
+        if cmd == "list":
+            for row in p.list_plans():
+                print(f"{row.get('id')} [{row.get('status')}] v{row.get('version')} tasks={row.get('tasks')} | {row.get('goal')}")
+            return
+
+        if cmd == "show":
+            plan = p.get(args.plan_id)
+            if not plan:
+                print("not found")
+                sys.exit(1)
+            if args.json:
+                print(json.dumps(plan.to_dict(), ensure_ascii=False, indent=2, default=str))
+                return
+            print(f"{plan.id} [{plan.status}] v{plan.version}")
+            print(f"Goal: {plan.goal}")
+            for t in p.ordered_tasks(plan):
+                deps = ",".join(t.depends_on) if t.depends_on else "-"
+                print(f"  {t.id} [{t.status}] {t.action} deps={deps} | {t.title}")
+            return
+
+        if cmd == "run":
+            report = p.run(args.plan_id, max_tasks=args.max_tasks)
+            if args.json:
+                print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+                return
+            print(f"Plan {report.get('plan_id')} → {report.get('status')}")
+            for t in report.get("executed") or []:
+                print(f"  {t.get('id')} [{t.get('status')}] {t.get('title')}")
+            return
+
+        if cmd == "replan":
+            plan = p.replan(args.plan_id, reason=args.reason, retry_failed=True)
+            if not plan:
+                print("not found")
+                sys.exit(1)
+            if args.json:
+                print(json.dumps(plan.to_dict(), ensure_ascii=False, indent=2, default=str))
+                return
+            print(f"Replanned {plan.id} v{plan.version} status={plan.status}")
+            return
+
+        print("plan create|list|show|run|replan")
 
     def cmd_teach(self, args):
         from curriculum import CurriculumEngine
@@ -289,6 +349,9 @@ def main():
     ctrl = CLIController()
     try:
         cmd = args.command
+        if cmd == "plan":
+            ctrl.cmd_plan(args)
+            return
         mapping = {
             "start": lambda: ctrl.cmd_start(args),
             "smoke": ctrl.cmd_smoke,
