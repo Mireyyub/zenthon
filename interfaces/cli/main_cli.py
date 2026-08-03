@@ -1,5 +1,5 @@
 """
-Leon CLI – ML training + ThinkingBrain / Orchestrator əmrləri.
+Leon CLI – ML training + ThinkingBrain + Curriculum təlim əmrləri.
 """
 
 import argparse
@@ -17,25 +17,20 @@ def parse_args():
         epilog="""
 Examples:
   python -m interfaces.cli.main_cli think "Leon kimdir?"
-  python -m interfaces.cli.main_cli think "Plan yaz" --mode sot --goal "MVP"
-  python -m interfaces.cli.main_cli agent coding "Fibonacci funksiyası yaz"
-  python -m interfaces.cli.main_cli agent react "Cari vaxtı al"
+  python -m interfaces.cli.main_cli teach 000001
+  python -m interfaces.cli.main_cli lessons
+  python -m interfaces.cli.main_cli agent coding "Fibonacci yaz"
   python -m interfaces.cli.main_cli status
   python -m interfaces.cli.main_cli llm-check
-  python -m interfaces.cli.main_cli train --model linear_regression --data train.csv --target y
         """,
     )
     sub = parser.add_subparsers(dest="command")
 
     think_p = sub.add_parser("think", help="Leon ThinkingBrain ilə düşün")
-    think_p.add_argument("query", type=str, help="Sual / tapşırıq")
+    think_p.add_argument("query", type=str)
     think_p.add_argument("--mode", default="auto", choices=["auto", "cot", "tot", "sot"])
     think_p.add_argument("--goal", default=None)
-    think_p.add_argument(
-        "--agent",
-        default=None,
-        help="coding|research|executor|vision|voice|react|pev|reflexion",
-    )
+    think_p.add_argument("--agent", default=None)
     think_p.add_argument("--json", action="store_true")
 
     agent_p = sub.add_parser("agent", help="Agent işə sal")
@@ -45,6 +40,12 @@ Examples:
     )
     agent_p.add_argument("task", type=str)
     agent_p.add_argument("--json", action="store_true")
+
+    teach_p = sub.add_parser("teach", help="Curriculum dərsini LEON-a öyrət")
+    teach_p.add_argument("lesson_id", nargs="?", default="000001", help="Dərs ID (default: 000001)")
+    teach_p.add_argument("--json", action="store_true")
+
+    sub.add_parser("lessons", help="Mövcud curriculum dərslərini siyahıla")
 
     sub.add_parser("status", help="Platform status")
     sub.add_parser("info", help="Sistem məlumatı")
@@ -124,6 +125,30 @@ class CLIController:
             print(f"Error   : {res.error}")
         print(f"Output  : {res.output}")
 
+    def cmd_teach(self, args):
+        from curriculum import CurriculumEngine
+
+        eng = CurriculumEngine()
+        report = eng.teach(args.lesson_id)
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+            return
+        print(f"Lesson     : {report.get('name')} ({report.get('lesson_id')})")
+        print(f"Goal       : {report.get('goal')}")
+        print(f"Injected   : {report.get('injected')}")
+        st = report.get("self_test") or {}
+        print(f"Self-test  : {st.get('passed')}/{st.get('total')} passed")
+        for case in st.get("cases") or []:
+            mark = "OK" if case.get("pass") else "FAIL"
+            print(f"  [{mark}] {case.get('input')} → {case.get('predicted')} (expected {case.get('expected')})")
+
+    def cmd_lessons(self):
+        from curriculum import CurriculumEngine
+
+        eng = CurriculumEngine()
+        print("Available lessons:", eng.list_available() or "(none)")
+        print("Taught this session:", eng.status().get("taught"))
+
     def cmd_status(self):
         from brain.orchestrator import BrainOrchestrator
 
@@ -148,8 +173,6 @@ class CLIController:
         client = get_llm_client()
         report = client.health_check()
         print(json.dumps(report, ensure_ascii=False, indent=2))
-
-        # embedding probe
         emb = client.embed("Leon AI platform test")
         print(f"embedding_dims: {len(emb) if emb else None}")
 
@@ -223,6 +246,10 @@ def main():
             ctrl.cmd_think(args)
         elif args.command == "agent":
             ctrl.cmd_agent(args)
+        elif args.command == "teach":
+            ctrl.cmd_teach(args)
+        elif args.command == "lessons":
+            ctrl.cmd_lessons()
         elif args.command == "status":
             ctrl.cmd_status()
         elif args.command == "info":
