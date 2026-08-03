@@ -8,39 +8,67 @@ Category
 Volume: 01 Foundation
 
 Version:
-1.1
+1.2
 
 --------------------------------------------------
 
 GOAL
 
-LEON-a kateqoriya anlayışını öyrətmək.
+LEON obyektləri qruplaşdırmağı öyrənməlidir.
 
 --------------------------------------------------
 
 Definition
 
-Kateqoriya oxşar obyektləri birləşdirən qrupdur.
-
-Kateqoriya tək bir obyekt deyil.
+Kateqoriya ortaq xüsusiyyətləri olan obyektlərin qrupudur.
 
 --------------------------------------------------
 
 Examples
 
-heyvan
+Meyvə kateqoriyası
 
-meyvə
+alma
 
-məməli
+armud
 
-canlı
+banan
+
+şaftalı
+
+Quş kateqoriyası
+
+qartal
+
+sərçə
+
+göyərçin
+
+Məməli
+
+insan
+
+pişik
+
+it
+
+--------------------------------------------------
+
+Counter Examples
+
+alma -> quş
+
+qartal -> meyvə
+
+daş -> məməli
 
 --------------------------------------------------
 
 Logical Rules
 
-Əgər A və B eyni kateqoriyadadırsa, bu onların eyni olduğunu bildirmir.
+Hər obyekt eyni anda bir neçə kateqoriyaya aid ola bilər.
+
+İnsan: Canlı, Məməli, Onurğalı, Primat.
 
 Üzvlük eynilik demək deyil.
 
@@ -50,7 +78,37 @@ Exercises
 
 Sual
 
-Pişik heyvan kateqoriyasına aiddirmi?
+İt hansı kateqoriyaya daxildir?
+
+Cavab
+
+Məməli.
+
+--------------------------------------------------
+
+Sual
+
+Banan hansı kateqoriyaya daxildir?
+
+Cavab
+
+Meyvə.
+
+--------------------------------------------------
+
+Sual
+
+Alma quşdurmu?
+
+Cavab
+
+Xeyr.
+
+--------------------------------------------------
+
+Sual
+
+İnsan məməlidirmi?
 
 Cavab
 
@@ -60,25 +118,15 @@ Bəli.
 
 Sual
 
-Heyvan özü tək obyektdirmi?
+Daş meyvədirmi?
 
 Cavab
 
-Xeyr. Heyvan kateqoriyadır.
+Xeyr.
 
 --------------------------------------------------
 
 SELF TEST
-
-Input
-
-heyvan
-
-Output
-
-Kateqoriya
-
--------------
 
 Input
 
@@ -92,7 +140,27 @@ Kateqoriya
 
 Input
 
-pişik
+quş
+
+Output
+
+Kateqoriya
+
+-------------
+
+Input
+
+məməli
+
+Output
+
+Kateqoriya
+
+-------------
+
+Input
+
+alma
 
 Output
 

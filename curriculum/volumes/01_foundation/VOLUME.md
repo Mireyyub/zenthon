@@ -6,7 +6,7 @@ Name:
 Foundation
 
 Version:
-1.1.0
+1.2.0
 
 --------------------------------------------------
 
@@ -29,18 +29,18 @@ Bu anlayışlar gələcək bütün təlimlərin əsasını təşkil edir.
 
 Lessons
 
-000001 Existence   → Mövcudluq / Varlıq
-000002 Object      → Obyekt
-000003 Property    → Xüsusiyyət
-000004 Category    → Kateqoriya
-000005 Relation    → Əlaqə
+000001 Existence      → Mövcudluq / Varlıq
+000002 Object         → Obyekt
+000003 Property       → Xüsusiyyət
+000004 Category       → Kateqoriya (meyvə, quş, məməli)
+000005 Relationship   → Əlaqə (istiqamətli münasibətlər)
 
 --------------------------------------------------
 
 Data
 
-train.jsonl  → instruction/output cütləri
-eval.jsonl   → yoxlama sualları
+train.jsonl  → 20 instruction/output cütü
+eval.jsonl   → 10 yoxlama sualı
 
 --------------------------------------------------
 

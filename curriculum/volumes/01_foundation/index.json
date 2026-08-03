@@ -1,7 +1,7 @@
 {
   "volume": "01",
   "title": "Foundation",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "lessons": [
     "000001",
     "000002",
@@ -16,5 +16,7 @@
     "Xüsusiyyət",
     "Kateqoriya",
     "Əlaqə"
-  ]
+  ],
+  "train_pairs": 20,
+  "eval_pairs": 10
 }

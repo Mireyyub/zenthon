@@ -8,3 +8,13 @@
 {"id":"000008","instruction":"Daşın rəngi ola bilərmi?","output":"Bəli."}
 {"id":"000009","instruction":"Almanın çəkisi ola bilərmi?","output":"Bəli."}
 {"id":"000010","instruction":"Pişik obyektdirmi?","output":"Bəli."}
+{"id":"000011","instruction":"Alma hansı kateqoriyaya daxildir?","output":"Meyvə."}
+{"id":"000012","instruction":"İt hansı kateqoriyaya daxildir?","output":"Məməli."}
+{"id":"000013","instruction":"Qartal hansı kateqoriyaya daxildir?","output":"Quş."}
+{"id":"000014","instruction":"Ay nə ətrafında fırlanır?","output":"Yer."}
+{"id":"000015","instruction":"Yer nə ətrafında fırlanır?","output":"Günəş."}
+{"id":"000016","instruction":"Alma quşdurmu?","output":"Xeyr."}
+{"id":"000017","instruction":"İnsan məməlidirmi?","output":"Bəli."}
+{"id":"000018","instruction":"Daş meyvədirmi?","output":"Xeyr."}
+{"id":"000019","instruction":"Pişik canlıdırmı?","output":"Bəli."}
+{"id":"000020","instruction":"Kitab insanı oxuyurmu?","output":"Xeyr. Normal haldə insan kitabı oxuyur."}

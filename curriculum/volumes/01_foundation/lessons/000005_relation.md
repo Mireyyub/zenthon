@@ -3,46 +3,54 @@
 Lesson ID: 000005
 
 Lesson Name:
-Relation
+Relationship
 
 Volume: 01 Foundation
 
 Version:
-1.1
+1.2
 
 --------------------------------------------------
 
 GOAL
 
-LEON-a əlaqə anlayışını öyrətmək.
+LEON-a obyektlər arasındakı əlaqə anlayışını öyrətmək.
 
 --------------------------------------------------
 
 Definition
 
-Əlaqə iki və ya daha çox varlıq/obyekt arasında bağlantıdır.
+Əlaqə iki və ya daha çox obyekt arasında mövcud olan münasibətdir.
 
 --------------------------------------------------
 
 Examples
 
-is_a
+Alma ağacda bitir.
 
-part_of
+Ay Yer ətrafında fırlanır.
 
-near
-
-owned_by
+İnsan kitab oxuyur.
 
 --------------------------------------------------
 
 Logical Rules
 
+Əlaqələr istiqamətli ola bilər.
+
+planet -> Günəş ətrafında fırlanır
+
+Yer -> Günəş sistemi
+
 Əlaqə obyekt deyil.
 
 Əlaqənin mövcudluğu eynilik demək deyil.
 
-Oxşarlıq eynilik demək deyil.
+--------------------------------------------------
+
+Counter Examples
+
+Daş kitabı yeyir.
 
 --------------------------------------------------
 
@@ -50,21 +58,31 @@ Exercises
 
 Sual
 
-is_a əlaqədirmi?
+Yer nə ətrafında fırlanır?
 
 Cavab
 
-Bəli.
+Günəş.
 
 --------------------------------------------------
 
 Sual
 
-Pişik şirdirmi?
+Ay nə ətrafında fırlanır?
 
 Cavab
 
-Xeyr.
+Yer.
+
+--------------------------------------------------
+
+Sual
+
+Kitab insanı oxuyurmu?
+
+Cavab
+
+Xeyr. Normal haldə insan kitabı oxuyur.
 
 --------------------------------------------------
 
