@@ -1,3 +1,5 @@
-{"id":"C001","lesson":"000006","instruction":"Yağış yerin islanmasının səbəbidirmi?","output":"Bəli.","confidence":1.0,"tags":["cause"],"language":"az"}
-{"id":"C002","lesson":"000007","instruction":"Yerin islanması yağışın nəticəsidirmi?","output":"Bəli.","confidence":1.0,"tags":["effect"],"language":"az"}
-{"id":"C003","lesson":"000006","instruction":"Səbəb nəticədən əvvəl gəlirmi?","output":"Bəli.","confidence":1.0,"tags":["cause"],"language":"az"}
+{"id":"000021","instruction":"Yağıntı yerin islanmasına səbəb ola bilərmi?","output":"Bəli.","lesson":"000006","confidence":0.9,"tags":["cause"]}
+{"id":"000022","instruction":"Korrelyasiya həmişə səbəbdirmi?","output":"Xeyr.","lesson":"000006","confidence":0.9,"tags":["cause"]}
+{"id":"000023","instruction":"Tüstü odun nəticəsi ola bilərmi?","output":"Bəli.","lesson":"000007","confidence":0.9,"tags":["effect"]}
+{"id":"000024","instruction":"Nəticə səbəbdən əvvəl gələ bilərmi?","output":"Xeyr.","lesson":"000007","confidence":0.9,"tags":["effect"]}
+{"id":"000025","instruction":"Səbəb nədir?","output":"Başqa bir hadisəni törədən amil.","lesson":"000006","confidence":0.85,"tags":["cause"]}

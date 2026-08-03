@@ -1,7 +1,5 @@
 {
   "volume": "02",
   "title": "Causality",
-  "version": "1.0.0",
-  "lessons": ["000006", "000007"],
-  "target_concepts": ["Səbəb", "Nəticə", "Səbəb-nəticə"]
+  "lessons": ["000006", "000007"]
 }
