@@ -1,5 +1,5 @@
 """
-Learning Engine (spec 022) + disk persistence (Faza 1).
+Learning Engine (spec 022) + validated promotion only (Faza 4).
 """
 
 from __future__ import annotations
@@ -131,6 +131,15 @@ class LearningEngine:
 
         if status == "validated":
             self._commit(rec)
+        elif status == "pending":
+            # unverified → yalnız working (promotion yox)
+            if self._memory:
+                try:
+                    self._memory.remember(
+                        rec.content, kind="working", tag="unverified", importance=0.3, verified=False
+                    )
+                except Exception:
+                    pass
 
         if self.auto_persist:
             self.save()
@@ -173,34 +182,64 @@ class LearningEngine:
         return None
 
     def _commit(self, rec: LearningRecord) -> None:
+        """Validated → facts + promote memory layers."""
         if self._facts:
             try:
-                self._facts.add(rec.content, source=f"learning:{rec.source}")
+                self._facts.add(rec.content, source=f"learning:{rec.source}", confidence=rec.confidence)
             except Exception:
                 pass
         if self._memory:
             try:
-                self._memory.remember(
+                self._memory.promote_validated(
                     rec.content,
-                    kind="vector",
-                    metadata={"learning_id": rec.id, "confidence": rec.confidence},
+                    source=rec.source,
+                    confidence=rec.confidence,
+                    learning_id=rec.id,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"promote_validated: {e}")
+                try:
+                    self._memory.remember(
+                        rec.content,
+                        kind="vector",
+                        metadata={"learning_id": rec.id, "confidence": rec.confidence},
+                        verified=True,
+                    )
+                except Exception:
+                    pass
         event_bus.publish("KnowledgeUpdated", {"id": rec.id}, source="learning_engine")
 
     def validate_record(self, record_id: str, accept: bool = True) -> Optional[LearningRecord]:
         rec = self._records.get(record_id)
         if not rec:
+            # quarantine-dən axtar
+            for i, q in enumerate(self._quarantine):
+                if q.id == record_id:
+                    rec = q
+                    if accept:
+                        self._quarantine.pop(i)
+                        rec.status = "validated"
+                        self._records[rec.id] = rec
+                        self._commit(rec)
+                    if self.auto_persist:
+                        self.save()
+                    return rec
             return None
         rec.status = "validated" if accept else "rejected"
         if accept:
             self._commit(rec)
         else:
             self._quarantine.append(rec)
+            self._records.pop(record_id, None)
         if self.auto_persist:
             self.save()
         return rec
+
+    def quarantine_list(self) -> List[Dict[str, Any]]:
+        return [r.to_dict() for r in self._quarantine]
+
+    def pending_list(self) -> List[Dict[str, Any]]:
+        return [r.to_dict() for r in self._records.values() if r.status == "pending"]
 
     def from_curriculum(self, volume_id: str = "01") -> Dict[str, Any]:
         from curriculum.volume import load_train_jsonl
@@ -210,9 +249,9 @@ class LearningEngine:
         for row in rows:
             text = f"Q: {row.get('instruction')} → A: {row.get('output')}"
             results.append(
-                self.learn(text, source=f"curriculum:{volume_id}", confidence=0.9, id=row.get("id")).get(
-                    "record"
-                )
+                self.learn(
+                    text, source=f"curriculum:{volume_id}", confidence=0.9, id=row.get("id")
+                ).get("record")
             )
         return {"learned": len(results), "records": results}
 
@@ -223,6 +262,8 @@ class LearningEngine:
         return {
             "records": len(self._records),
             "quarantine": len(self._quarantine),
+            "pending": by_status.get("pending", 0),
+            "validated": by_status.get("validated", 0),
             "by_status": by_status,
             "path": str(self.path),
         }
