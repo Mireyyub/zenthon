@@ -1,12 +1,16 @@
 """
 Knowledge Graph — LEON canonical semantic store (spec 005 / 021).
+Disk persistence (Faza 1).
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Set, Tuple
 from datetime import datetime
+from pathlib import Path
 import uuid
+
+from core.persistence import write_json, read_json
 
 NODE_TYPES = {"Entity", "Concept", "Event", "Rule", "Procedure", "entity", "concept", "object"}
 EDGE_TYPES = {
@@ -25,11 +29,23 @@ EDGE_TYPES = {
 
 
 class KnowledgeGraph:
-    def __init__(self):
+    def __init__(self, path: Optional[Path | str] = None, auto_persist: bool = True):
+        if path is None:
+            try:
+                from core.config import config
+
+                path = config.path.graph_dir / "graph.json"
+            except Exception:
+                path = Path("data/leon/graph/graph.json")
+        self.path = Path(path)
+        self.auto_persist = auto_persist
         self._nodes: Dict[str, Dict[str, Any]] = {}
         self._edges: List[Dict[str, Any]] = []
+        self.load()
 
-    # ── ops (spec 021) ──
+    def _persist(self) -> None:
+        if self.auto_persist:
+            self.save()
 
     def create_node(
         self,
@@ -52,7 +68,6 @@ class KnowledgeGraph:
         )
 
     def add_node(self, label: str, node_type: str = "entity", properties: Optional[Dict] = None) -> str:
-        # reuse by label if exists
         existing = self.find_by_label(label)
         exact = [n for n in existing if n["label"].lower() == label.lower()]
         if exact:
@@ -66,6 +81,7 @@ class KnowledgeGraph:
             "created_at": datetime.now().isoformat(),
             "version": 1,
         }
+        self._persist()
         return node_id
 
     def update_node(self, node_id: str, **fields) -> bool:
@@ -79,6 +95,7 @@ class KnowledgeGraph:
         if "properties" in fields and isinstance(fields["properties"], dict):
             n["properties"].update(fields["properties"])
         n["version"] = int(n.get("version", 1)) + 1
+        self._persist()
         return True
 
     def link_nodes(
@@ -108,6 +125,7 @@ class KnowledgeGraph:
             "weight": weight,
             "confidence": confidence,
         })
+        self._persist()
 
     def unlink_nodes(self, source_id: str, target_id: str, relation: Optional[str] = None) -> int:
         before = len(self._edges)
@@ -119,7 +137,10 @@ class KnowledgeGraph:
                 and (relation is None or e["relation"] == relation)
             )
         ]
-        return before - len(self._edges)
+        removed = before - len(self._edges)
+        if removed:
+            self._persist()
+        return removed
 
     def get_node(self, node_id: str) -> Optional[Dict]:
         return self._nodes.get(node_id)
@@ -138,7 +159,6 @@ class KnowledgeGraph:
         return result
 
     def query(self, text: str, top_k: int = 10) -> List[Dict[str, Any]]:
-        """Simple ranked retrieval by label match + 1-hop neighbors."""
         scored: List[Tuple[float, Dict]] = []
         q = text.lower()
         for n in self._nodes.values():
@@ -155,12 +175,10 @@ class KnowledgeGraph:
         return [n for _, n in scored[:top_k]]
 
     def validate_integrity(self) -> Dict[str, Any]:
-        """Spec integrity: orphan edges, circular is_a."""
         issues = []
         for e in self._edges:
             if e["source"] not in self._nodes or e["target"] not in self._nodes:
                 issues.append(f"orphan_edge:{e}")
-        # circular is_a detection (DFS)
         is_a_adj: Dict[str, List[str]] = {}
         for e in self._edges:
             if e["relation"] == "is_a":
@@ -189,3 +207,19 @@ class KnowledgeGraph:
     def clear(self) -> None:
         self._nodes.clear()
         self._edges.clear()
+        self._persist()
+
+    def save(self) -> None:
+        write_json(self.path, {"nodes": self._nodes, "edges": self._edges})
+
+    def load(self) -> Dict[str, int]:
+        data = read_json(self.path, default={})
+        if not isinstance(data, dict):
+            return self.stats()
+        nodes = data.get("nodes") or {}
+        edges = data.get("edges") or []
+        if isinstance(nodes, dict):
+            self._nodes = nodes
+        if isinstance(edges, list):
+            self._edges = edges
+        return self.stats()

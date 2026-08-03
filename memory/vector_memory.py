@@ -1,19 +1,18 @@
 """
-Vector Memory – semantik axtarış.
-
-1) Ollama / OpenAI embeddings (mövcuddursa)
-2) Fallback: bag-of-words TF cosine
+Vector Memory – semantik axtarış + disk (Faza 1).
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
+from pathlib import Path
 import hashlib
 import math
 import re
 
 from core.logger import logger
+from core.persistence import write_json, read_json
 
 
 def _tokenize(text: str) -> List[str]:
@@ -48,10 +47,25 @@ def _cosine_dense(a: List[float], b: List[float]) -> float:
 
 
 class VectorMemory:
-    def __init__(self, use_llm_embeddings: bool = True):
+    def __init__(
+        self,
+        use_llm_embeddings: bool = True,
+        path: Optional[Path | str] = None,
+        auto_persist: bool = True,
+    ):
+        if path is None:
+            try:
+                from core.config import config
+
+                path = config.path.memory_dir / "vector.json"
+            except Exception:
+                path = Path("data/leon/memory/vector.json")
+        self.path = Path(path)
+        self.auto_persist = auto_persist
         self._docs: Dict[str, Dict[str, Any]] = {}
         self.use_llm_embeddings = use_llm_embeddings
-        self._llm_ok: Optional[bool] = None  # cache availability
+        self._llm_ok: Optional[bool] = None
+        self.load()
 
     def _try_dense(self, text: str) -> Optional[List[float]]:
         if not self.use_llm_embeddings:
@@ -84,6 +98,8 @@ class VectorMemory:
             "metadata": metadata or {},
             "created_at": datetime.now().isoformat(),
         }
+        if self.auto_persist:
+            self.save()
         return doc_id
 
     def search(self, query: str, top_k: int = 5) -> List[Tuple[str, float]]:
@@ -111,6 +127,8 @@ class VectorMemory:
 
     def clear(self) -> None:
         self._docs.clear()
+        if self.auto_persist:
+            self.save()
 
     def backend(self) -> str:
         if self._llm_ok is True:
@@ -118,3 +136,13 @@ class VectorMemory:
         if self._llm_ok is False:
             return "bag_of_words"
         return "auto"
+
+    def save(self) -> None:
+        # dense vectors can be large; still persist for restart
+        write_json(self.path, {"docs": self._docs})
+
+    def load(self) -> int:
+        data = read_json(self.path, default={})
+        if isinstance(data, dict) and "docs" in data:
+            self._docs = data["docs"] or {}
+        return len(self._docs)
