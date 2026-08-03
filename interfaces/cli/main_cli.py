@@ -1,5 +1,5 @@
 """
-Leon CLI – ML training + ThinkingBrain + Curriculum təlim əmrləri.
+Leon CLI – ThinkingBrain + Genesis Curriculum + ML.
 """
 
 import argparse
@@ -16,12 +16,11 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python -m interfaces.cli.main_cli think "Leon kimdir?"
+  python -m interfaces.cli.main_cli teach-volume 01
   python -m interfaces.cli.main_cli teach 000001
+  python -m interfaces.cli.main_cli volumes
   python -m interfaces.cli.main_cli lessons
-  python -m interfaces.cli.main_cli agent coding "Fibonacci yaz"
-  python -m interfaces.cli.main_cli status
-  python -m interfaces.cli.main_cli llm-check
+  python -m interfaces.cli.main_cli think "Obyekt nədir?"
         """,
     )
     sub = parser.add_subparsers(dest="command")
@@ -41,15 +40,21 @@ Examples:
     agent_p.add_argument("task", type=str)
     agent_p.add_argument("--json", action="store_true")
 
-    teach_p = sub.add_parser("teach", help="Curriculum dərsini LEON-a öyrət")
-    teach_p.add_argument("lesson_id", nargs="?", default="000001", help="Dərs ID (default: 000001)")
+    teach_p = sub.add_parser("teach", help="Tək curriculum dərsini öyrət")
+    teach_p.add_argument("lesson_id", nargs="?", default="000001")
+    teach_p.add_argument("--volume", default=None, help="Volume id (məs: 01)")
     teach_p.add_argument("--json", action="store_true")
 
-    sub.add_parser("lessons", help="Mövcud curriculum dərslərini siyahıla")
+    tv = sub.add_parser("teach-volume", help="Bütün cild dərslərini ardıcıllıqla öyrət")
+    tv.add_argument("volume_id", nargs="?", default="01", help="Volume id (default: 01)")
+    tv.add_argument("--json", action="store_true")
+
+    sub.add_parser("volumes", help="Genesis cildlərini siyahıla")
+    sub.add_parser("lessons", help="Mövcud dərsləri siyahıla")
 
     sub.add_parser("status", help="Platform status")
     sub.add_parser("info", help="Sistem məlumatı")
-    sub.add_parser("llm-check", help="LLM / Ollama sağlamlıq yoxlaması")
+    sub.add_parser("llm-check", help="LLM / Ollama yoxlaması")
 
     train_p = sub.add_parser("train", help="Model öyrət")
     train_p.add_argument("--model", required=True, choices=["linear_regression", "random_forest", "kmeans", "simple_nn"])
@@ -129,11 +134,12 @@ class CLIController:
         from curriculum import CurriculumEngine
 
         eng = CurriculumEngine()
-        report = eng.teach(args.lesson_id)
+        report = eng.teach(args.lesson_id, volume_id=getattr(args, "volume", None))
         if args.json:
             print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
             return
         print(f"Lesson     : {report.get('name')} ({report.get('lesson_id')})")
+        print(f"Volume     : {report.get('volume')}")
         print(f"Goal       : {report.get('goal')}")
         print(f"Injected   : {report.get('injected')}")
         st = report.get("self_test") or {}
@@ -142,12 +148,44 @@ class CLIController:
             mark = "OK" if case.get("pass") else "FAIL"
             print(f"  [{mark}] {case.get('input')} → {case.get('predicted')} (expected {case.get('expected')})")
 
+    def cmd_teach_volume(self, args):
+        from curriculum import CurriculumEngine
+
+        eng = CurriculumEngine()
+        report = eng.teach_volume(args.volume_id)
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+            return
+        print(f"Volume     : {report.get('name')} ({report.get('volume')})")
+        print(f"Version    : {report.get('version')}")
+        print(f"Targets    : {', '.join(report.get('target_concepts') or [])}")
+        print(f"Lessons    : {report.get('lessons_passed')}/{report.get('lessons_total')} passed")
+        for r in report.get("reports") or []:
+            st = r.get("self_test") or {}
+            print(f"  - {r.get('lesson_id')} {r.get('name')}: {st.get('passed')}/{st.get('total')}")
+
+    def cmd_volumes(self):
+        from curriculum import CurriculumEngine, load_volume
+
+        eng = CurriculumEngine()
+        for vid in eng.list_volumes():
+            try:
+                meta = load_volume(vid)
+                print(f"{meta.get('volume')} | {meta.get('name')} v{meta.get('version')}")
+                print(f"  lessons: {meta.get('lessons')}")
+                print(f"  targets: {meta.get('target_concepts')}")
+            except Exception as e:
+                print(f"{vid}: error {e}")
+
     def cmd_lessons(self):
         from curriculum import CurriculumEngine
 
         eng = CurriculumEngine()
-        print("Available lessons:", eng.list_available() or "(none)")
-        print("Taught this session:", eng.status().get("taught"))
+        print("Volumes:", eng.list_volumes())
+        print("Lessons:", eng.list_available() or "(none)")
+        st = eng.status()
+        print("Taught lessons:", st.get("taught_lessons"))
+        print("Taught volumes:", st.get("taught_volumes"))
 
     def cmd_status(self):
         from brain.orchestrator import BrainOrchestrator
@@ -248,6 +286,10 @@ def main():
             ctrl.cmd_agent(args)
         elif args.command == "teach":
             ctrl.cmd_teach(args)
+        elif args.command == "teach-volume":
+            ctrl.cmd_teach_volume(args)
+        elif args.command == "volumes":
+            ctrl.cmd_volumes()
         elif args.command == "lessons":
             ctrl.cmd_lessons()
         elif args.command == "status":
