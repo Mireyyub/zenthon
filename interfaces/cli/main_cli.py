@@ -1,4 +1,4 @@
-"""Leon CLI – start / smoke / save / load / eval / curriculum."""
+"""Leon CLI – think/reason via ReasoningEngine (Faza 3)."""
 
 import argparse
 import sys
@@ -15,33 +15,37 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python -m interfaces.cli.main_cli start --bootstrap
-  python -m interfaces.cli.main_cli teach-volume 01
+  python -m interfaces.cli.main_cli reason "Daş mövcuddurmu?"
+  python -m interfaces.cli.main_cli think "Obyekt nədir?"
   python -m interfaces.cli.main_cli eval 01
-  python -m interfaces.cli.main_cli save
-  python -m interfaces.cli.main_cli smoke
+  python -m interfaces.cli.main_cli teach-volume 01
         """,
     )
     sub = parser.add_subparsers(dest="command")
 
-    start_p = sub.add_parser("start", help="Leon bootstrap")
+    start_p = sub.add_parser("start")
     start_p.add_argument("--bootstrap", action="store_true")
     start_p.add_argument("--volume", default="01")
     start_p.add_argument("--no-llm-check", action="store_true")
     start_p.add_argument("--json", action="store_true")
 
-    sub.add_parser("smoke", help="Smoke test")
-
-    save_p = sub.add_parser("save", help="Diskə yaz")
+    sub.add_parser("smoke")
+    save_p = sub.add_parser("save")
     save_p.add_argument("--name", default="leon")
     save_p.add_argument("--json", action="store_true")
+    sub.add_parser("load")
 
-    sub.add_parser("load", help="Diskdən yüklə")
-
-    eval_p = sub.add_parser("eval", help="Curriculum volume eval.jsonl")
+    eval_p = sub.add_parser("eval")
     eval_p.add_argument("volume_id", nargs="?", default="01")
-    eval_p.add_argument("--no-teach", action="store_true", help="teach etmədən yalnız eval")
+    eval_p.add_argument("--no-teach", action="store_true")
     eval_p.add_argument("--json", action="store_true")
+
+    reason_p = sub.add_parser("reason", help="Vahid ReasoningEngine")
+    reason_p.add_argument("query", type=str)
+    reason_p.add_argument("--strategy", default="auto")
+    reason_p.add_argument("--goal", default=None)
+    reason_p.add_argument("--no-brain", action="store_true")
+    reason_p.add_argument("--json", action="store_true")
 
     think_p = sub.add_parser("think")
     think_p.add_argument("query", type=str)
@@ -76,6 +80,24 @@ Examples:
     return parser.parse_args()
 
 
+def _print_reason(result: dict):
+    print(f"Answer     : {result.get('answer') or result.get('conclusion')}")
+    print(f"Confidence : {result.get('confidence')} ({result.get('confidence_label')})")
+    print(f"Source     : {result.get('source')}")
+    print(f"Validation : {result.get('validation')}")
+    if result.get("conflict"):
+        print(f"Conflict   : {result.get('conflict')}")
+    print(f"Trace ID   : {result.get('trace_id')}")
+    print(f"LLM used   : {result.get('llm_used')}")
+    dec = result.get("decision") or {}
+    print(f"Decision   : {dec.get('action')} (risk={dec.get('risk')})")
+    ev = result.get("evidence") or []
+    if ev:
+        print("Evidence:")
+        for e in ev[:8]:
+            print(f"  - [{e.get('kind')}] {e.get('content')[:120]}")
+
+
 class CLIController:
     def cmd_start(self, args):
         from core.bootstrap import start_leon
@@ -89,10 +111,8 @@ class CLIController:
         if args.json:
             print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
             return
-        print(f"AI: {config.ai_name}")
         for step in report.get("steps") or []:
-            mark = "OK" if step.get("ok") else "FAIL"
-            print(f"  [{mark}] {step.get('step')}")
+            print(f"[{'OK' if step.get('ok') else 'FAIL'}] {step.get('step')}")
 
     def cmd_smoke(self):
         from core.bootstrap import smoke_test
@@ -107,11 +127,7 @@ class CLIController:
         from core.bootstrap import save_state
 
         report = save_state(name=args.name)
-        if args.json:
-            print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
-            return
-        print(f"Saved: {report.get('checkpoint_id')}")
-        print(report.get("parts"))
+        print(json.dumps(report, ensure_ascii=False, indent=2, default=str) if args.json else report)
 
     def cmd_load(self):
         from core.bootstrap import load_state
@@ -125,29 +141,43 @@ class CLIController:
         if args.json:
             print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
             return
-        print(f"Volume    : {report.get('volume_id')}")
         print(f"Pass rate : {report.get('pass_rate')} ({report.get('passed')}/{report.get('total')})")
-        for c in report.get("cases") or []:
-            mark = "OK" if c.get("pass") else "FAIL"
-            print(f"  [{mark}] {c.get('question')} → {c.get('got')} (expected {c.get('expected')})")
+
+    def cmd_reason(self, args):
+        from brain.reasoning.engine import reasoning_engine
+
+        result = reasoning_engine.reason(
+            args.query,
+            strategy=args.strategy,
+            goal=args.goal,
+            use_brain=not args.no_brain,
+        )
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+            return
+        _print_reason(result)
 
     def cmd_think(self, args):
         from brain.orchestrator import BrainOrchestrator
 
         orch = BrainOrchestrator(brain_name=config.ai_name)
-        result = orch.run(args.query, goal=args.goal, reasoning_mode=args.mode, agent_type=args.agent)
+        result = orch.run(
+            args.query,
+            goal=args.goal,
+            reasoning_mode=args.mode,
+            agent_type=args.agent,
+        )
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
             return
-        print(f"Conclusion : {result.get('conclusion')}")
-        print(f"Confidence : {result.get('confidence')}")
+        _print_reason(result)
 
     def cmd_agent(self, args):
         from agents.manager import agent_manager
 
         agent = agent_manager.create(args.type)
         res = agent_manager.run(agent.id, args.task)
-        print(f"Success : {res.success}\nOutput  : {res.output}")
+        print(f"Success: {res.success}\n{res.output}")
 
     def cmd_teach(self, args):
         from curriculum import CurriculumEngine
@@ -178,9 +208,9 @@ class CLIController:
         if args.json:
             print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
             return
-        print(f"Volume: {report.get('name')} lessons {report.get('lessons_passed')}/{report.get('lessons_total')}")
+        print(f"Lessons {report.get('lessons_passed')}/{report.get('lessons_total')}")
         ev = report.get("eval") or {}
-        print(f"Eval: {ev.get('pass_rate')} ({ev.get('passed')}/{ev.get('total')})")
+        print(f"Eval {ev.get('pass_rate')}")
 
     def cmd_volumes(self):
         from curriculum import CurriculumEngine, load_volume
@@ -188,16 +218,15 @@ class CLIController:
         eng = CurriculumEngine()
         for vid in eng.list_volumes():
             try:
-                meta = load_volume(vid)
-                print(f"{meta.get('volume')} | {meta.get('name')} lessons={meta.get('lessons')}")
+                m = load_volume(vid)
+                print(f"{m.get('volume')} | {m.get('name')}")
             except Exception as e:
                 print(vid, e)
 
     def cmd_lessons(self):
         from curriculum import CurriculumEngine
 
-        eng = CurriculumEngine()
-        print(eng.list_available())
+        print(CurriculumEngine().list_available())
 
     def cmd_status(self):
         from core.bootstrap import leon_status
@@ -206,7 +235,7 @@ class CLIController:
 
     def cmd_info(self):
         kernel.initialize()
-        print(f"{config.ai_name} | {config.path.leon_dir} | {config.llm.model}")
+        print(f"{config.ai_name} | {config.path.leon_dir}")
 
     def cmd_llm_check(self):
         from brain.llm.client import get_llm_client
@@ -219,37 +248,27 @@ def main():
     ctrl = CLIController()
     try:
         cmd = args.command
-        if cmd == "start":
-            ctrl.cmd_start(args)
-        elif cmd == "smoke":
-            ctrl.cmd_smoke()
-        elif cmd == "save":
-            ctrl.cmd_save(args)
-        elif cmd == "load":
-            ctrl.cmd_load()
-        elif cmd == "eval":
-            ctrl.cmd_eval(args)
-        elif cmd == "think":
-            ctrl.cmd_think(args)
-        elif cmd == "agent":
-            ctrl.cmd_agent(args)
-        elif cmd == "teach":
-            ctrl.cmd_teach(args)
-        elif cmd == "teach-volume":
-            ctrl.cmd_teach_volume(args)
-        elif cmd == "volumes":
-            ctrl.cmd_volumes()
-        elif cmd == "lessons":
-            ctrl.cmd_lessons()
-        elif cmd == "status":
-            ctrl.cmd_status()
-        elif cmd == "info":
-            ctrl.cmd_info()
-        elif cmd == "llm-check":
-            ctrl.cmd_llm_check()
-        else:
+        mapping = {
+            "start": lambda: ctrl.cmd_start(args),
+            "smoke": ctrl.cmd_smoke,
+            "save": lambda: ctrl.cmd_save(args),
+            "load": ctrl.cmd_load,
+            "eval": lambda: ctrl.cmd_eval(args),
+            "reason": lambda: ctrl.cmd_reason(args),
+            "think": lambda: ctrl.cmd_think(args),
+            "agent": lambda: ctrl.cmd_agent(args),
+            "teach": lambda: ctrl.cmd_teach(args),
+            "teach-volume": lambda: ctrl.cmd_teach_volume(args),
+            "volumes": ctrl.cmd_volumes,
+            "lessons": ctrl.cmd_lessons,
+            "status": ctrl.cmd_status,
+            "info": ctrl.cmd_info,
+            "llm-check": ctrl.cmd_llm_check,
+        }
+        if cmd not in mapping:
             print("Leon CLI – --help")
             sys.exit(1)
+        mapping[cmd]()
     except Exception as e:
         logger.error(f"Error: {e}")
         sys.exit(1)
