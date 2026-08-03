@@ -80,16 +80,15 @@ def parse_args():
     pre.add_argument("--reason", default="user")
     pre.add_argument("--json", action="store_true")
 
-    # Omniverse
     ov = sub.add_parser("omniverse", help="Leon ↔ Omniverse bridge")
     ov_sub = ov.add_subparsers(dest="ov_cmd")
     ov_sub.add_parser("status")
-    ov_sub.add_parser("demo", help="Load stub demo scene")
-    ov_sub.add_parser("sync", help="Sync from live Kit stage")
+    ov_sub.add_parser("demo")
+    ov_sub.add_parser("sync")
     ova = ov_sub.add_parser("ask")
     ova.add_argument("question", type=str)
     ova.add_argument("--json", action="store_true")
-    ov_sub.add_parser("inject", help="Scene → FactStore")
+    ov_sub.add_parser("inject")
 
     teach_p = sub.add_parser("teach")
     teach_p.add_argument("lesson_id", nargs="?", default="000001")
@@ -282,7 +281,7 @@ class CLIController:
             print(json.dumps(ov.status(), ensure_ascii=False, indent=2))
             return
         if cmd == "demo":
-            print(json.dumps(ov.load_stub_demo_scene(), ensure dual_ascii=False, indent=2))
+            print(json.dumps(ov.load_stub_demo_scene(), ensure_ascii=False, indent=2))
             print(json.dumps(ov.describe_scene(), ensure_ascii=False, indent=2))
             return
         if cmd == "sync":
