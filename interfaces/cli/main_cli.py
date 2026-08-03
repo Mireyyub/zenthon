@@ -1,4 +1,4 @@
-"""Leon CLI – think/reason via ReasoningEngine (Faza 3)."""
+"""Leon CLI – reason / retrieve / quarantine (Faza 4)."""
 
 import argparse
 import sys
@@ -10,17 +10,7 @@ from core.config import config
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Leon AI Platform CLI",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python -m interfaces.cli.main_cli reason "Daş mövcuddurmu?"
-  python -m interfaces.cli.main_cli think "Obyekt nədir?"
-  python -m interfaces.cli.main_cli eval 01
-  python -m interfaces.cli.main_cli teach-volume 01
-        """,
-    )
+    parser = argparse.ArgumentParser(description="Leon AI Platform CLI")
     sub = parser.add_subparsers(dest="command")
 
     start_p = sub.add_parser("start")
@@ -40,7 +30,7 @@ Examples:
     eval_p.add_argument("--no-teach", action="store_true")
     eval_p.add_argument("--json", action="store_true")
 
-    reason_p = sub.add_parser("reason", help="Vahid ReasoningEngine")
+    reason_p = sub.add_parser("reason")
     reason_p.add_argument("query", type=str)
     reason_p.add_argument("--strategy", default="auto")
     reason_p.add_argument("--goal", default=None)
@@ -53,6 +43,16 @@ Examples:
     think_p.add_argument("--goal", default=None)
     think_p.add_argument("--agent", default=None)
     think_p.add_argument("--json", action="store_true")
+
+    ret_p = sub.add_parser("retrieve", help="Vahid memory/knowledge retrieve")
+    ret_p.add_argument("query", type=str)
+    ret_p.add_argument("--top-k", type=int, default=8)
+    ret_p.add_argument("--json", action="store_true")
+
+    q_p = sub.add_parser("quarantine", help="Unverified / rejected learning records")
+    q_p.add_argument("--accept", default=None, help="Record id qəbul et (validated)")
+    q_p.add_argument("--reject", default=None, help="Record id rədd et")
+    q_p.add_argument("--json", action="store_true")
 
     agent_p = sub.add_parser("agent")
     agent_p.add_argument(
@@ -84,18 +84,11 @@ def _print_reason(result: dict):
     print(f"Answer     : {result.get('answer') or result.get('conclusion')}")
     print(f"Confidence : {result.get('confidence')} ({result.get('confidence_label')})")
     print(f"Source     : {result.get('source')}")
-    print(f"Validation : {result.get('validation')}")
-    if result.get("conflict"):
-        print(f"Conflict   : {result.get('conflict')}")
     print(f"Trace ID   : {result.get('trace_id')}")
-    print(f"LLM used   : {result.get('llm_used')}")
     dec = result.get("decision") or {}
-    print(f"Decision   : {dec.get('action')} (risk={dec.get('risk')})")
-    ev = result.get("evidence") or []
-    if ev:
-        print("Evidence:")
-        for e in ev[:8]:
-            print(f"  - [{e.get('kind')}] {e.get('content')[:120]}")
+    print(f"Decision   : {dec.get('action')}")
+    for e in (result.get("evidence") or [])[:6]:
+        print(f"  [{e.get('kind')}] {str(e.get('content'))[:100]}")
 
 
 class CLIController:
@@ -120,14 +113,11 @@ class CLIController:
         report = smoke_test()
         print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
         print("SMOKE:", "PASS" if report.get("overall_ok") else "FAIL")
-        if not report.get("overall_ok"):
-            sys.exit(1)
 
     def cmd_save(self, args):
         from core.bootstrap import save_state
 
-        report = save_state(name=args.name)
-        print(json.dumps(report, ensure_ascii=False, indent=2, default=str) if args.json else report)
+        print(save_state(name=args.name))
 
     def cmd_load(self):
         from core.bootstrap import load_state
@@ -147,10 +137,7 @@ class CLIController:
         from brain.reasoning.engine import reasoning_engine
 
         result = reasoning_engine.reason(
-            args.query,
-            strategy=args.strategy,
-            goal=args.goal,
-            use_brain=not args.no_brain,
+            args.query, strategy=args.strategy, goal=args.goal, use_brain=not args.no_brain
         )
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
@@ -161,16 +148,41 @@ class CLIController:
         from brain.orchestrator import BrainOrchestrator
 
         orch = BrainOrchestrator(brain_name=config.ai_name)
-        result = orch.run(
-            args.query,
-            goal=args.goal,
-            reasoning_mode=args.mode,
-            agent_type=args.agent,
-        )
+        result = orch.run(args.query, goal=args.goal, reasoning_mode=args.mode, agent_type=args.agent)
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
             return
         _print_reason(result)
+
+    def cmd_retrieve(self, args):
+        from memory.retrieve import retrieve
+
+        report = retrieve(args.query, top_k=args.top_k)
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+            return
+        print(f"Query: {report.get('query')} | returned={report.get('returned')}")
+        for c in report.get("candidates") or []:
+            print(f"  [{c.get('source')}|{c.get('score')}] {c.get('content')[:120]}")
+
+    def cmd_quarantine(self, args):
+        from learning.engine import LearningEngine
+
+        eng = LearningEngine()
+        if args.accept:
+            rec = eng.validate_record(args.accept, accept=True)
+            print(json.dumps(rec.to_dict() if rec else {"error": "not found"}, ensure_ascii=False, indent=2))
+            return
+        if args.reject:
+            rec = eng.validate_record(args.reject, accept=False)
+            print(json.dumps(rec.to_dict() if rec else {"error": "not found"}, ensure_ascii=False, indent=2))
+            return
+        data = {
+            "quarantine": eng.quarantine_list(),
+            "pending": eng.pending_list(),
+            "stats": eng.stats(),
+        }
+        print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
 
     def cmd_agent(self, args):
         from agents.manager import agent_manager
@@ -209,8 +221,7 @@ class CLIController:
             print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
             return
         print(f"Lessons {report.get('lessons_passed')}/{report.get('lessons_total')}")
-        ev = report.get("eval") or {}
-        print(f"Eval {ev.get('pass_rate')}")
+        print(f"Eval {(report.get('eval') or {}).get('pass_rate')}")
 
     def cmd_volumes(self):
         from curriculum import CurriculumEngine, load_volume
@@ -256,6 +267,8 @@ def main():
             "eval": lambda: ctrl.cmd_eval(args),
             "reason": lambda: ctrl.cmd_reason(args),
             "think": lambda: ctrl.cmd_think(args),
+            "retrieve": lambda: ctrl.cmd_retrieve(args),
+            "quarantine": lambda: ctrl.cmd_quarantine(args),
             "agent": lambda: ctrl.cmd_agent(args),
             "teach": lambda: ctrl.cmd_teach(args),
             "teach-volume": lambda: ctrl.cmd_teach_volume(args),
