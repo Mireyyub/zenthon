@@ -1,12 +1,12 @@
 """
-Leon bootstrap – Faza 0 entrypoint məntiqi.
+Leon bootstrap – Faza 0 + Faza 1 (persist load).
 
-    from core.bootstrap import start_leon, leon_status, smoke_test
+    from core.bootstrap import start_leon, leon_status, smoke_test, save_state, load_state
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from core.config import config, load_config
 from core.logger import logger
@@ -19,11 +19,8 @@ def start_leon(
     bootstrap_curriculum: bool = False,
     volume_id: str = "01",
     check_llm: bool = True,
+    load_persisted: bool = True,
 ) -> Dict[str, Any]:
-    """
-    Kernel + data dirs + optional LLM check + soft service register.
-    Heç bir hard fail: əskik modul status-da görünür.
-    """
     report: Dict[str, Any] = {
         "ai": config.ai_name,
         "ok": True,
@@ -32,9 +29,8 @@ def start_leon(
         "warnings": [],
     }
 
-    # 1) Config + dirs
     try:
-        load_config()  # refresh global if needed
+        load_config()
         config.ensure_dirs()
         report["steps"].append({"step": "paths", "ok": True, "leon_dir": str(config.path.leon_dir)})
     except Exception as e:
@@ -42,7 +38,6 @@ def start_leon(
         report["steps"].append({"step": "paths", "ok": False, "error": str(e)})
         report["missing"].append("paths")
 
-    # 2) Kernel
     try:
         kernel.initialize()
         kernel.start()
@@ -52,10 +47,18 @@ def start_leon(
         report["steps"].append({"step": "kernel", "ok": False, "error": str(e)})
         report["missing"].append("kernel")
 
-    # 3) Soft services
+    # Faza 1: diskdən yüklə
+    if load_persisted:
+        try:
+            persisted = load_state()
+            report["persisted"] = persisted
+            report["steps"].append({"step": "persist_load", "ok": True, "detail": persisted.get("parts")})
+        except Exception as e:
+            report["warnings"].append(f"persist_load: {e}")
+            report["steps"].append({"step": "persist_load", "ok": False, "error": str(e)})
+
     report["services"] = _register_soft_services()
 
-    # 4) LLM check (non-fatal)
     if check_llm:
         llm_report = _check_llm()
         report["llm"] = llm_report
@@ -65,7 +68,6 @@ def start_leon(
         else:
             report["steps"].append({"step": "llm", "ok": True, "model": llm_report.get("model")})
 
-    # 5) Optional curriculum bootstrap (soft)
     if bootstrap_curriculum:
         try:
             from learning import bootstrap_from_specs
@@ -77,20 +79,35 @@ def start_leon(
                 "genes_activated": boot.get("genes_activated"),
                 "learning_stats": boot.get("learning_stats"),
             }
+            # flush after teach
+            try:
+                save_state(name="post_bootstrap")
+            except Exception:
+                pass
             report["steps"].append({"step": "curriculum", "ok": True})
         except Exception as e:
             report["warnings"].append(f"curriculum bootstrap: {e}")
             report["steps"].append({"step": "curriculum", "ok": False, "error": str(e)})
 
     logger.info(
-        f"Leon start: ok={report['ok']} warnings={len(report['warnings'])} "
-        f"missing={report['missing']}"
+        f"Leon start: ok={report['ok']} warnings={len(report['warnings'])} missing={report['missing']}"
     )
     return report
 
 
+def save_state(name: str = "leon") -> Dict[str, Any]:
+    from core.checkpoint import save_leon_state
+
+    return save_leon_state(name=name)
+
+
+def load_state() -> Dict[str, Any]:
+    from core.checkpoint import load_leon_state
+
+    return load_leon_state()
+
+
 def _register_soft_services() -> Dict[str, str]:
-    """Import fail olsa 'missing', yoxsa 'ok'."""
     status: Dict[str, str] = {}
 
     def soft(name: str, factory):
@@ -112,13 +129,11 @@ def _register_soft_services() -> Dict[str, str]:
         "learning_engine",
         lambda: __import__("learning.engine", fromlist=["LearningEngine"]).LearningEngine(),
     )
-    # brain factory already on kernel
     try:
         _ = service_registry.get("brain")
         status["brain"] = "ok"
     except Exception as e:
         status["brain"] = f"missing: {e}"
-
     return status
 
 
@@ -138,7 +153,6 @@ def _check_llm() -> Dict[str, Any]:
 
 
 def leon_status() -> Dict[str, Any]:
-    """Tam status – əskiklər aydın."""
     st: Dict[str, Any] = {
         "ai": config.ai_name,
         "paths": config.path.as_dict(),
@@ -147,6 +161,7 @@ def leon_status() -> Dict[str, Any]:
         "services": {},
         "llm": {},
         "components": {},
+        "persisted": {},
     }
     try:
         if not kernel.status().get("initialized"):
@@ -159,7 +174,6 @@ def leon_status() -> Dict[str, Any]:
     except Exception as e:
         st["kernel"] = {"initialized": False, "error": str(e)}
 
-    st["services"] = {}
     for name in ("brain", "memory", "knowledge_graph", "fact_store", "learning_engine", "llm"):
         try:
             obj = service_registry.get(name)
@@ -169,16 +183,37 @@ def leon_status() -> Dict[str, Any]:
 
     st["llm"] = _check_llm()
 
-    # Component probes
+    # disk counts
+    try:
+        from knowledge.facts import FactStore
+        from knowledge.graph import KnowledgeGraph
+        from learning.engine import LearningEngine
+        from memory.vector_memory import VectorMemory
+
+        st["persisted"] = {
+            "facts": len(FactStore().all()),
+            "graph": KnowledgeGraph().stats(),
+            "learning": LearningEngine().stats(),
+            "vector": VectorMemory().count(),
+        }
+    except Exception as e:
+        st["persisted"] = {"error": str(e)}
+
     comps = {}
     for label, probe in (
         ("curriculum", lambda: __import__("curriculum", fromlist=["CurriculumEngine"]).CurriculumEngine()),
         ("genome", lambda: __import__("genome", fromlist=["list_genes"]).list_genes()),
-        ("reasoning_engine", lambda: __import__("brain.reasoning.engine", fromlist=["reasoning_engine"]).reasoning_engine),
+        (
+            "reasoning_engine",
+            lambda: __import__("brain.reasoning.engine", fromlist=["reasoning_engine"]).reasoning_engine,
+        ),
     ):
         try:
             r = probe()
-            comps[label] = {"ok": True, "detail": str(r)[:120] if not hasattr(r, "__dict__") else type(r).__name__}
+            comps[label] = {
+                "ok": True,
+                "detail": str(r)[:120] if not hasattr(r, "__dict__") else type(r).__name__,
+            }
         except Exception as e:
             comps[label] = {"ok": False, "error": str(e)}
     st["components"] = comps
@@ -186,73 +221,71 @@ def leon_status() -> Dict[str, Any]:
 
 
 def smoke_test() -> Dict[str, Any]:
-    """
-    Faza 0 qəbul testi:
-      - start
-      - llm-check (soft)
-      - think "test"
-      - teach-volume 01 (soft if heavy)
-    """
     results: List[Dict[str, Any]] = []
     overall = True
 
-    start = start_leon(bootstrap_curriculum=False, check_llm=True)
-    results.append({"name": "start", "ok": start.get("ok", False), "detail": start})
+    start = start_leon(bootstrap_curriculum=False, check_llm=True, load_persisted=True)
+    results.append({"name": "start", "ok": start.get("ok", False)})
     if not start.get("ok"):
         overall = False
 
-    # llm
     llm = start.get("llm") or _check_llm()
     results.append(
         {
             "name": "llm-check",
-            "ok": True,  # non-fatal for smoke
+            "ok": True,
             "reachable": bool(llm.get("reachable")),
-            "detail": {k: llm.get(k) for k in ("provider", "model", "reachable", "error")},
         }
     )
 
-    # think
     try:
         from brain.orchestrator import BrainOrchestrator
 
         orch = BrainOrchestrator(brain_name=config.ai_name)
         thought = orch.run("test", reasoning_mode="auto")
-        ok = bool(thought.get("conclusion") is not None or thought.get("confidence") is not None)
-        results.append(
-            {
-                "name": "think",
-                "ok": ok,
-                "confidence": thought.get("confidence"),
-                "mode": thought.get("reasoning_mode"),
-                "llm_used": thought.get("llm_used"),
-            }
-        )
+        ok = thought.get("conclusion") is not None or thought.get("confidence") is not None
+        results.append({"name": "think", "ok": ok, "confidence": thought.get("confidence")})
         if not ok:
             overall = False
     except Exception as e:
         results.append({"name": "think", "ok": False, "error": str(e)})
         overall = False
 
-    # teach one lesson (lighter than full volume for smoke)
     try:
         from curriculum import CurriculumEngine
 
         eng = CurriculumEngine()
         report = eng.teach("000001", volume_id="01")
         st = report.get("self_test") or {}
-        ok = st.get("total", 0) >= 0  # ran without crash
         results.append(
             {
                 "name": "teach-000001",
-                "ok": ok,
+                "ok": True,
                 "passed": st.get("passed"),
                 "total": st.get("total"),
-                "lesson": report.get("name"),
             }
         )
     except Exception as e:
         results.append({"name": "teach-000001", "ok": False, "error": str(e)})
+        overall = False
+
+    # Faza 1: persist round-trip
+    try:
+        from knowledge.facts import FactStore
+
+        marker = f"LEON_PERSIST_MARKER_{__import__('uuid').uuid4().hex[:8]}"
+        fs = FactStore()
+        fs.add(marker, source="smoke", confidence=1.0)
+        fs2 = FactStore()  # new instance → load from disk
+        found = any(marker in f.get("statement", "") for f in fs2.all())
+        results.append({"name": "persist-facts", "ok": found, "marker": marker})
+        if not found:
+            overall = False
+
+        save_report = save_state(name="smoke")
+        results.append({"name": "save_state", "ok": True, "checkpoint": save_report.get("checkpoint_id")})
+    except Exception as e:
+        results.append({"name": "persist-facts", "ok": False, "error": str(e)})
         overall = False
 
     return {

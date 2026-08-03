@@ -5,7 +5,7 @@ from core.logger import logger
 from core.event_bus import event_bus
 from core.service_registry import service_registry
 from core.kernel import kernel
-from core.bootstrap import start_leon, leon_status, smoke_test
+from core.bootstrap import start_leon, leon_status, smoke_test, save_state, load_state
 
 __all__ = [
     "config",
@@ -18,4 +18,6 @@ __all__ = [
     "start_leon",
     "leon_status",
     "smoke_test",
+    "save_state",
+    "load_state",
 ]
