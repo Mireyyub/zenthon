@@ -1,0 +1,3 @@
+{"case":"valid_entity_relation","expected":"pass"}
+{"case":"missing_entity","expected":"fail"}
+{"case":"confidence_gt_1","expected":"fail"}

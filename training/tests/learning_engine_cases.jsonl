@@ -1,0 +1,3 @@
+{"case":"new_verified_fact","expected":"validated"}
+{"case":"conflicting_fact","expected":"pending_review"}
+{"case":"unsupported_claim","expected":"rejected"}

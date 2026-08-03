@@ -1,0 +1,7 @@
+id: GENE-000001
+name: Existence
+depends_on: []
+enables:
+  - Object
+  - Observation
+definition: Distinguishes existence from non-existence.

@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "required": ["id", "source", "content", "confidence"],
+  "properties": {
+    "id": {"type": "string"},
+    "source": {"type": "string"},
+    "content": {"type": "string"},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "status": {"enum": ["pending", "validated", "rejected"]}
+  }
+}

@@ -1,0 +1,7 @@
+id: GENE-000002
+name: Object
+depends_on:
+  - GENE-000001
+enables:
+  - Property
+definition: An identifiable entity.

@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "required": ["plan_id", "goal", "tasks"],
+  "properties": {
+    "plan_id": {"type": "string"},
+    "goal": {"type": "string"},
+    "tasks": {"type": "array"},
+    "status": {"type": "string"},
+    "priority": {"type": "integer"}
+  }
+}

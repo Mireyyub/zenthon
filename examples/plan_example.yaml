@@ -1,0 +1,10 @@
+plan_id: PLAN-000001
+goal: Learn Python basics
+tasks:
+  - id: T1
+    name: Variables
+    status: completed
+  - id: T2
+    name: Functions
+    depends_on: [T1]
+    status: ready
