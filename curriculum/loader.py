@@ -1,30 +1,46 @@
-"""Lesson loader – curriculum/lessons/ altından dərs oxu."""
+"""Lesson loader – volumes + legacy lessons."""
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from curriculum.volume import get_lesson_path, list_volumes, load_volume
+
 LESSONS_DIR = Path(__file__).resolve().parent / "lessons"
 
 
-def list_lessons() -> List[str]:
-    if not LESSONS_DIR.exists():
-        return []
-    ids = []
-    for p in sorted(LESSONS_DIR.glob("*.md")):
-        # 000001_existence.md → 000001
-        m = re.match(r"(\d+)", p.stem)
-        if m:
-            ids.append(m.group(1))
-    return ids
+def list_lessons(volume_id: Optional[str] = None) -> List[str]:
+    if volume_id:
+        try:
+            return load_volume(volume_id).get("lessons") or []
+        except FileNotFoundError:
+            return []
+    ids: List[str] = []
+    # all volumes
+    for vid in list_volumes():
+        try:
+            ids.extend(load_volume(vid).get("lessons") or [])
+        except Exception:
+            pass
+    # legacy
+    if LESSONS_DIR.exists():
+        for p in sorted(LESSONS_DIR.glob("*.md")):
+            m = re.match(r"(\d+)", p.stem)
+            if m and m.group(1) not in ids:
+                ids.append(m.group(1))
+    return sorted(set(ids))
 
 
-def load_lesson(lesson_id: str) -> Dict[str, Any]:
-    """Markdown dərs faylını strukturlaşdırılmış dict-ə çevir."""
-    path = _resolve_path(lesson_id)
+def load_lesson(lesson_id: str, volume_id: Optional[str] = None) -> Dict[str, Any]:
+    path = get_lesson_path(lesson_id, volume_id=volume_id)
+    if path is None:
+        # legacy direct
+        if LESSONS_DIR.exists():
+            for p in LESSONS_DIR.glob(f"{lesson_id}*.md"):
+                path = p
+                break
     if path is None:
         raise FileNotFoundError(f"Lesson not found: {lesson_id}")
 
@@ -32,23 +48,12 @@ def load_lesson(lesson_id: str) -> Dict[str, Any]:
     return parse_lesson_markdown(text, lesson_id=lesson_id, source=str(path))
 
 
-def _resolve_path(lesson_id: str) -> Optional[Path]:
-    if not LESSONS_DIR.exists():
-        return None
-    # exact or prefix match
-    for p in LESSONS_DIR.glob(f"{lesson_id}*.md"):
-        return p
-    for p in LESSONS_DIR.glob("*.md"):
-        if p.stem.startswith(lesson_id):
-            return p
-    return None
-
-
 def parse_lesson_markdown(text: str, lesson_id: str = "", source: str = "") -> Dict[str, Any]:
     data: Dict[str, Any] = {
         "id": lesson_id,
         "name": "",
         "version": "1.0",
+        "volume": "",
         "goal": "",
         "concepts": [],
         "rules": [],
@@ -58,7 +63,6 @@ def parse_lesson_markdown(text: str, lesson_id: str = "", source: str = "") -> D
         "raw": text,
     }
 
-    # Header fields
     for line in text.splitlines():
         if line.startswith("Lesson Name:"):
             data["name"] = line.split(":", 1)[1].strip()
@@ -66,11 +70,14 @@ def parse_lesson_markdown(text: str, lesson_id: str = "", source: str = "") -> D
             data["id"] = line.split(":", 1)[1].strip() or lesson_id
         elif line.startswith("Version:"):
             data["version"] = line.split(":", 1)[1].strip()
+        elif line.startswith("Volume:"):
+            data["volume"] = line.split(":", 1)[1].strip()
 
-    # Sections
     sections = re.split(r"\n-{5,}\n", text)
     for sec in sections:
-        header = sec.strip().splitlines()[0].strip().upper() if sec.strip() else ""
+        if not sec.strip():
+            continue
+        header = sec.strip().splitlines()[0].strip().upper()
         body = "\n".join(sec.strip().splitlines()[1:]).strip()
 
         if header == "GOAL":
@@ -100,10 +107,11 @@ def _parse_concept(header: str, body: str) -> Dict[str, Any]:
         if low.startswith("nümun") or low.startswith("misal") or low.startswith("example"):
             mode = "examples"
             continue
-        if ":" in ln and mode != "statement" and len(ln.split(":", 1)[0]) < 20:
+        if ":" in ln and len(ln.split(":", 1)[0]) < 24:
             k, v = ln.split(":", 1)
-            props[k.strip()] = v.strip()
-            continue
+            if k.strip().lower() not in {"sual", "cavab", "input", "output"}:
+                props[k.strip()] = v.strip()
+                continue
         if mode == "examples":
             examples.append(ln)
         else:
@@ -127,7 +135,6 @@ def _parse_questions(body: str) -> List[Dict[str, str]]:
         if low.startswith("sual") or low.startswith("question"):
             if q and a:
                 qs.append({"question": q, "answer": a})
-            # next non-empty is question text sometimes on same line
             rest = ln.split(":", 1)[1].strip() if ":" in ln else ""
             q, a = rest or None, None
             continue
@@ -146,38 +153,34 @@ def _parse_questions(body: str) -> List[Dict[str, str]]:
 def _parse_self_tests(body: str) -> List[Dict[str, str]]:
     tests = []
     current: Dict[str, str] = {}
+    expecting = None
     for ln in body.splitlines():
         ln = ln.strip()
         if not ln or ln.startswith("---") or ln.upper().startswith("END"):
             if current.get("input") and current.get("output"):
                 tests.append(current)
                 current = {}
+            expecting = None
             continue
         low = ln.lower()
         if low.startswith("input"):
-            current["input"] = ln.split(":", 1)[1].strip() if ":" in ln else ""
-            if not current["input"]:
-                # value on next line style handled by next iteration if empty
-                pass
-        elif low.startswith("output"):
-            current["output"] = ln.split(":", 1)[1].strip() if ":" in ln else ""
-        elif "input" in current and not current.get("input"):
+            val = ln.split(":", 1)[1].strip() if ":" in ln else ""
+            current["input"] = val
+            expecting = "input" if not val else None
+            continue
+        if low.startswith("output"):
+            val = ln.split(":", 1)[1].strip() if ":" in ln else ""
+            current["output"] = val
+            expecting = "output" if not val else None
+            continue
+        if expecting == "input":
             current["input"] = ln
-        elif "output" in current and not current.get("output"):
+            expecting = None
+        elif expecting == "output":
             current["output"] = ln
+            expecting = None
         elif current.get("input") and not current.get("output"):
-            # bare value after Input line
-            if "input" in current and current["input"] == "":
-                current["input"] = ln
-            else:
-                current["output"] = ln
-        else:
-            # alternating bare lines: value after Input header without colon content
-            if "pending_input" not in current and low not in ("input", "output"):
-                if not current:
-                    current = {"input": ln}
-                elif "output" not in current:
-                    current["output"] = ln
+            current["output"] = ln
     if current.get("input") and current.get("output"):
         tests.append(current)
     return tests
