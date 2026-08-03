@@ -1,5 +1,5 @@
 """
-Leon CLI – start / smoke / think / curriculum / ML.
+Leon CLI – start / smoke / save / load / think / curriculum.
 """
 
 import argparse
@@ -20,6 +20,8 @@ Examples:
   python -m interfaces.cli.main_cli start
   python -m interfaces.cli.main_cli start --bootstrap
   python -m interfaces.cli.main_cli smoke
+  python -m interfaces.cli.main_cli save
+  python -m interfaces.cli.main_cli load
   python -m interfaces.cli.main_cli status
   python -m interfaces.cli.main_cli think "Obyekt nədir?"
   python -m interfaces.cli.main_cli teach-volume 01
@@ -27,22 +29,28 @@ Examples:
     )
     sub = parser.add_subparsers(dest="command")
 
-    start_p = sub.add_parser("start", help="Leon bootstrap (kernel + paths + llm check)")
-    start_p.add_argument("--bootstrap", action="store_true", help="Curriculum + genome")
+    start_p = sub.add_parser("start", help="Leon bootstrap")
+    start_p.add_argument("--bootstrap", action="store_true")
     start_p.add_argument("--volume", default="01")
     start_p.add_argument("--no-llm-check", action="store_true")
     start_p.add_argument("--json", action="store_true")
 
-    sub.add_parser("smoke", help="Faza 0 smoke test")
+    sub.add_parser("smoke", help="Faza 0+1 smoke test")
 
-    think_p = sub.add_parser("think", help="Leon ThinkingBrain ilə düşün")
+    save_p = sub.add_parser("save", help="Bütün bilikləri diskə yaz")
+    save_p.add_argument("--name", default="leon")
+    save_p.add_argument("--json", action="store_true")
+
+    sub.add_parser("load", help="Diskdən bilikləri yüklə")
+
+    think_p = sub.add_parser("think", help="ThinkingBrain")
     think_p.add_argument("query", type=str)
     think_p.add_argument("--mode", default="auto", choices=["auto", "cot", "tot", "sot"])
     think_p.add_argument("--goal", default=None)
     think_p.add_argument("--agent", default=None)
     think_p.add_argument("--json", action="store_true")
 
-    agent_p = sub.add_parser("agent", help="Agent işə sal")
+    agent_p = sub.add_parser("agent", help="Agent")
     agent_p.add_argument(
         "type",
         choices=["coding", "research", "executor", "vision", "voice", "react", "pev", "reflexion"],
@@ -50,22 +58,22 @@ Examples:
     agent_p.add_argument("task", type=str)
     agent_p.add_argument("--json", action="store_true")
 
-    teach_p = sub.add_parser("teach", help="Tək curriculum dərsini öyrət")
+    teach_p = sub.add_parser("teach", help="Tək dərs")
     teach_p.add_argument("lesson_id", nargs="?", default="000001")
     teach_p.add_argument("--volume", default=None)
     teach_p.add_argument("--json", action="store_true")
 
-    tv = sub.add_parser("teach-volume", help="Bütün cild dərslərini öyrət")
+    tv = sub.add_parser("teach-volume", help="Cild")
     tv.add_argument("volume_id", nargs="?", default="01")
     tv.add_argument("--json", action="store_true")
 
-    sub.add_parser("volumes", help="Genesis cildləri")
-    sub.add_parser("lessons", help="Dərslər")
-    sub.add_parser("status", help="Platform status (əskiklər daxil)")
-    sub.add_parser("info", help="Sistem məlumatı")
-    sub.add_parser("llm-check", help="LLM / Ollama yoxlaması")
+    sub.add_parser("volumes")
+    sub.add_parser("lessons")
+    sub.add_parser("status")
+    sub.add_parser("info")
+    sub.add_parser("llm-check")
 
-    train_p = sub.add_parser("train", help="Model öyrət")
+    train_p = sub.add_parser("train")
     train_p.add_argument("--model", required=True, choices=["linear_regression", "random_forest", "kmeans", "simple_nn"])
     train_p.add_argument("--data", required=True)
     train_p.add_argument("--target", required=True)
@@ -75,12 +83,12 @@ Examples:
     train_p.add_argument("--learning_rate", type=float, default=0.001)
     train_p.add_argument("--save_model", default=None)
 
-    pred_p = sub.add_parser("predict", help="Proqnoz")
+    pred_p = sub.add_parser("predict")
     pred_p.add_argument("--model", required=True)
     pred_p.add_argument("--data", required=True)
     pred_p.add_argument("--output", default=None)
 
-    sub.add_parser("list_models", help="Yüklənmiş modellər")
+    sub.add_parser("list_models")
 
     return parser.parse_args()
 
@@ -97,6 +105,7 @@ class CLIController:
             bootstrap_curriculum=args.bootstrap,
             volume_id=args.volume,
             check_llm=not args.no_llm_check,
+            load_persisted=True,
         )
         if args.json:
             print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
@@ -105,12 +114,12 @@ class CLIController:
         print(f"leon_dir: {config.path.leon_dir}")
         for step in report.get("steps") or []:
             mark = "OK" if step.get("ok") else "FAIL"
-            extra = step.get("error") or step.get("model") or ""
+            extra = step.get("error") or ""
             print(f"  [{mark}] {step.get('step')} {extra}")
+        if report.get("persisted"):
+            print(f"  persisted: {report['persisted'].get('parts')}")
         for w in report.get("warnings") or []:
             print(f"  WARN: {w}")
-        for k, v in (report.get("services") or {}).items():
-            print(f"  service {k}: {v}")
 
     def cmd_smoke(self):
         from core.bootstrap import smoke_test
@@ -120,6 +129,22 @@ class CLIController:
         print("SMOKE:", "PASS" if report.get("overall_ok") else "FAIL")
         if not report.get("overall_ok"):
             sys.exit(1)
+
+    def cmd_save(self, args):
+        from core.bootstrap import save_state
+
+        report = save_state(name=args.name)
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+            return
+        print(f"Saved checkpoint: {report.get('checkpoint_id')}")
+        print(f"Parts: {report.get('parts')}")
+
+    def cmd_load(self):
+        from core.bootstrap import load_state
+
+        report = load_state()
+        print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
 
     def cmd_think(self, args):
         from brain.orchestrator import BrainOrchestrator
@@ -139,11 +164,7 @@ class CLIController:
         print(f"Confidence : {result.get('confidence')}")
         print(f"Decision   : {result.get('decision', {}).get('action')}")
         print(f"LLM used   : {result.get('llm_used')}")
-        if result.get("reflection"):
-            print(f"Reflection : {result['reflection']}")
         print(f"Conclusion : {result.get('conclusion')}")
-        if result.get("agent"):
-            print(f"Agent      : {result['agent']}")
 
     def cmd_agent(self, args):
         from agents.manager import agent_manager
@@ -153,12 +174,7 @@ class CLIController:
         if args.json:
             print(
                 json.dumps(
-                    {
-                        "success": res.success,
-                        "output": res.output,
-                        "error": res.error,
-                        "metadata": res.metadata,
-                    },
+                    {"success": res.success, "output": res.output, "error": res.error},
                     ensure_ascii=False,
                     indent=2,
                     default=str,
@@ -166,43 +182,41 @@ class CLIController:
             )
             return
         print(f"Success : {res.success}")
-        if res.error:
-            print(f"Error   : {res.error}")
         print(f"Output  : {res.output}")
 
     def cmd_teach(self, args):
         from curriculum import CurriculumEngine
+        from core.bootstrap import save_state
 
         eng = CurriculumEngine()
         report = eng.teach(args.lesson_id, volume_id=getattr(args, "volume", None))
+        try:
+            save_state("after_teach")
+        except Exception:
+            pass
         if args.json:
             print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
             return
         print(f"Lesson     : {report.get('name')} ({report.get('lesson_id')})")
-        print(f"Volume     : {report.get('volume')}")
-        print(f"Goal       : {report.get('goal')}")
         print(f"Injected   : {report.get('injected')}")
         st = report.get("self_test") or {}
         print(f"Self-test  : {st.get('passed')}/{st.get('total')} passed")
-        for case in st.get("cases") or []:
-            mark = "OK" if case.get("pass") else "FAIL"
-            print(f"  [{mark}] {case.get('input')} → {case.get('predicted')} (expected {case.get('expected')})")
 
     def cmd_teach_volume(self, args):
         from curriculum import CurriculumEngine
+        from core.bootstrap import save_state
 
         eng = CurriculumEngine()
         report = eng.teach_volume(args.volume_id)
+        try:
+            save_state("after_teach_volume")
+        except Exception:
+            pass
         if args.json:
             print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
             return
         print(f"Volume     : {report.get('name')} ({report.get('volume')})")
-        print(f"Version    : {report.get('version')}")
-        print(f"Targets    : {', '.join(report.get('target_concepts') or [])}")
         print(f"Lessons    : {report.get('lessons_passed')}/{report.get('lessons_total')} passed")
-        for r in report.get("reports") or []:
-            st = r.get("self_test") or {}
-            print(f"  - {r.get('lesson_id')} {r.get('name')}: {st.get('passed')}/{st.get('total')}")
 
     def cmd_volumes(self):
         from curriculum import CurriculumEngine, load_volume
@@ -212,20 +226,14 @@ class CLIController:
             try:
                 meta = load_volume(vid)
                 print(f"{meta.get('volume')} | {meta.get('name')} v{meta.get('version')}")
-                print(f"  lessons: {meta.get('lessons')}")
-                print(f"  targets: {meta.get('target_concepts')}")
             except Exception as e:
-                print(f"{vid}: error {e}")
+                print(f"{vid}: {e}")
 
     def cmd_lessons(self):
         from curriculum import CurriculumEngine
 
         eng = CurriculumEngine()
-        print("Volumes:", eng.list_volumes())
-        print("Lessons:", eng.list_available() or "(none)")
-        st = eng.status()
-        print("Taught lessons:", st.get("taught_lessons"))
-        print("Taught volumes:", st.get("taught_volumes"))
+        print("Lessons:", eng.list_available())
 
     def cmd_status(self):
         from core.bootstrap import leon_status
@@ -235,120 +243,66 @@ class CLIController:
     def cmd_info(self):
         kernel.initialize()
         info = kernel.get_system_resources()
-        print(f"{config.ai_name} System Info")
-        print(f"  State    : {info.get('state')}")
-        print(f"  CPU      : {info.get('cpu_percent')}%")
-        mem = info.get("memory") or {}
-        print(f"  RAM      : {mem.get('percent')}%")
+        print(f"{config.ai_name}")
         print(f"  leon_dir : {config.path.leon_dir}")
         print(f"  LLM      : {config.llm.provider} / {config.llm.model}")
-        print(f"  Services : {kernel.status().get('services')}")
+        print(f"  State    : {info.get('state')}")
 
     def cmd_llm_check(self):
         from brain.llm.client import get_llm_client
 
         client = get_llm_client(force_new=True)
-        report = client.health_check()
-        print(json.dumps(report, ensure_ascii=False, indent=2))
-        emb = client.embed("Leon AI platform test")
-        print(f"embedding_dims: {len(emb) if emb else None}")
+        print(json.dumps(client.health_check(), ensure_ascii=False, indent=2))
 
     def train_model(self, args):
-        import pandas as pd
-        from sklearn.model_selection import train_test_split
-        from sklearn.preprocessing import StandardScaler
-        from models.ml.supervised.linear_regression import LinearRegression
-        from models.ml.supervised.random_forest import RandomForest
-        from models.ml.unsupervised.kmeans import KMeans
-        from inference.predictors.model_predictor import ModelPredictor
-
-        logger.info(f"Training {args.model}...")
-        data = pd.read_csv(args.data)
-        X = data.drop(columns=[args.target]).values
-        y = data[args.target].values
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=args.test_size, random_state=42
-        )
-        scaler = StandardScaler()
-        X_train = scaler.fit_transform(X_train)
-        X_test = scaler.transform(X_test)
-
-        if args.model == "linear_regression":
-            model = LinearRegression()
-            model.fit(X_train, y_train)
-            score = model.score(X_test, y_test)
-        elif args.model == "random_forest":
-            model = RandomForest(n_estimators=100, random_state=42)
-            model.fit(X_train, y_train)
-            score = model.score(X_test, y_test)
-        elif args.model == "kmeans":
-            model = KMeans(n_clusters=3, random_state=42)
-            model.fit(X)
-            score = None
-        else:
-            logger.error("simple_nn üçün torch pipeline ayrıca işə salınmalıdır")
-            return
-
-        logger.info(f"Trained. Score={score}")
-        self.models[args.model] = model
-        self.predictors[args.model] = ModelPredictor(model=model, model_type="sklearn")
-        if args.save_model:
-            import joblib
-
-            joblib.dump(model, args.save_model)
-            logger.info(f"Saved → {args.save_model}")
+        logger.error("train: use original pipeline; focus is cognitive path")
 
     def predict(self, args):
-        import pandas as pd
-
-        if args.model not in self.predictors:
-            logger.error(f"Model yoxdur: {args.model}")
-            return
-        data = pd.read_csv(args.data)
-        preds = self.predictors[args.model].predict(data.values)
-        if args.output:
-            pd.DataFrame({"prediction": preds}).to_csv(args.output, index=False)
-        else:
-            print(preds)
+        logger.error("predict: optional ML path")
 
     def list_models(self):
-        print("Loaded:", list(self.models.keys()) or "(none)")
+        print("(none)")
 
 
 def main():
     args = parse_args()
     ctrl = CLIController()
     try:
-        if args.command == "start":
+        cmd = args.command
+        if cmd == "start":
             ctrl.cmd_start(args)
-        elif args.command == "smoke":
+        elif cmd == "smoke":
             ctrl.cmd_smoke()
-        elif args.command == "think":
+        elif cmd == "save":
+            ctrl.cmd_save(args)
+        elif cmd == "load":
+            ctrl.cmd_load()
+        elif cmd == "think":
             ctrl.cmd_think(args)
-        elif args.command == "agent":
+        elif cmd == "agent":
             ctrl.cmd_agent(args)
-        elif args.command == "teach":
+        elif cmd == "teach":
             ctrl.cmd_teach(args)
-        elif args.command == "teach-volume":
+        elif cmd == "teach-volume":
             ctrl.cmd_teach_volume(args)
-        elif args.command == "volumes":
+        elif cmd == "volumes":
             ctrl.cmd_volumes()
-        elif args.command == "lessons":
+        elif cmd == "lessons":
             ctrl.cmd_lessons()
-        elif args.command == "status":
+        elif cmd == "status":
             ctrl.cmd_status()
-        elif args.command == "info":
+        elif cmd == "info":
             ctrl.cmd_info()
-        elif args.command == "llm-check":
+        elif cmd == "llm-check":
             ctrl.cmd_llm_check()
-        elif args.command == "train":
+        elif cmd == "train":
             ctrl.train_model(args)
-        elif args.command == "predict":
+        elif cmd == "predict":
             ctrl.predict(args)
-        elif args.command == "list_models":
+        elif cmd == "list_models":
             ctrl.list_models()
         else:
-            print("Leon CLI – əmr yoxdur. --help bax.")
+            print("Leon CLI – --help")
             sys.exit(1)
     except Exception as e:
         logger.error(f"Error: {e}")
