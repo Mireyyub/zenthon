@@ -1,8 +1,11 @@
-id: GENE-000005
-name: Relation
-depends_on:
-  - GENE-000002
-enables:
-  - Reasoning
-  - GraphTraversal
-definition: A relation is a directed link between two or more entities (is_a, part_of, causes, ...).
+id: GENE_000005
+name: Relationship
+version: "1.0"
+volume: "01"
+lesson: "000005"
+concept: Əlaqə
+definition: "Əlaqə iki və ya daha çox obyekt arasında mövcud olan münasibətdir."
+relations: [is_a, part_of, near, owned_by, causes]
+examples:
+  - "Ay Yer ətrafında fırlanır"
+  - "Yer Günəş ətrafında fırlanır"

@@ -1,7 +1,10 @@
-id: GENE-000002
+id: GENE_000002
 name: Object
-depends_on:
-  - GENE-000001
-enables:
-  - Property
-definition: An identifiable entity.
+version: "1.0"
+volume: "01"
+lesson: "000002"
+concept: Obyekt
+definition: "Obyekt xüsusiyyətləri olan varlıqdır."
+rules:
+  - "Every object has at least one property"
+examples: [daş, alma, pişik, kompüter]

@@ -1,8 +1,8 @@
-id: GENE-000003
+id: GENE_000003
 name: Property
-depends_on:
-  - GENE-000002
-enables:
-  - Category
-  - Comparison
-definition: A property describes an aspect of an object (name and value).
+version: "1.0"
+volume: "01"
+lesson: "000003"
+concept: Xüsusiyyət
+definition: "Xüsusiyyət obyekti təsvir edən məlumatdır."
+examples: [rəng, çəki, forma, temperatur, sürət]

@@ -1,7 +1,12 @@
-id: GENE-000001
+id: GENE_000001
 name: Existence
-depends_on: []
-enables:
-  - Object
-  - Observation
-definition: Distinguishes existence from non-existence.
+version: "1.0"
+volume: "01"
+lesson: "000001"
+concept: Varlıq
+definition: "Mövcud olan hər şey varlıqdır."
+rules:
+  - "If X is observable/measurable then X exists"
+  - "Non-existence examples are not real objects"
+examples: [daş, alma, insan, ulduz, planet]
+counter_examples: ["kvadrat dairə"]

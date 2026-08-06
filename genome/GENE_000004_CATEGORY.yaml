@@ -1,9 +1,11 @@
-id: GENE-000004
+id: GENE_000004
 name: Category
-depends_on:
-  - GENE-000002
-  - GENE-000003
-enables:
-  - Taxonomy
-  - Relation
-definition: A category groups objects that share properties; membership is not identity.
+version: "1.0"
+volume: "01"
+lesson: "000004"
+concept: Kateqoriya
+definition: "Kateqoriya ortaq xüsusiyyətləri olan obyektlərin qrupudur."
+categories:
+  meyvə: [alma, armud, banan, şaftalı]
+  quş: [qartal, sərçə, göyərçin]
+  məməli: [insan, pişik, it]

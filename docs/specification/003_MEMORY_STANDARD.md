@@ -1,11 +1,11 @@
-# MEMORY STANDARD
+# 003 Memory Standard
 
 Layers:
-1. Working Memory
-2. Conversation Memory
-3. Semantic Memory
-4. Episodic Memory
-5. Long-Term Memory
+1. **Working** – capacity + TTL, unverified claims
+2. **Vector** – hybrid BOW/dense search, disk JSON
+3. **Semantic** – subject-predicate-object triples
+4. **Episodic / long-term** – optional brain.memory
 
-Promotion:
-Working -> Semantic only after validation.
+Promotion: only after LearningEngine validated → `MemoryManager.promote_validated`.
+
+Retrieval: `memory.retrieve.UnifiedRetriever` (facts + graph + vector + semantic).
