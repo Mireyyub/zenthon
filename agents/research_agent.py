@@ -1,4 +1,6 @@
-"""Research Agent – araşdırma, məlumat toplama, xülasə."""
+"""Research Agent – retrieve + curriculum + optional LLM summary."""
+
+from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
@@ -7,26 +9,80 @@ from core.logger import logger
 
 
 class ResearchAgent(BaseAgent):
+    PRODUCTION = False  # experimental but functional
+
     def __init__(self, name: str = "ResearchAgent", description: str = "Araşdırma və xülasə"):
         super().__init__(name=name, description=description)
 
     def run(self, task: str, context: Optional[Dict[str, Any]] = None) -> AgentResult:
-        logger.info(f"ResearchAgent running: {task[:80]}")
+        logger.info(f"ResearchAgent: {task[:80]}")
+        context = context or {}
+        snippets = []
+        sources = []
+
+        # 1) Curriculum exact/fuzzy
         try:
-            from brain import ThinkingBrain
-            brain = ThinkingBrain(name="ResearchBrain")
-            result = brain.think(
-                f"Araşdırma tapşırığı: {task}",
-                goal="Dəqiq və strukturlaşdırılmış xülasə",
-                reasoning_mode="tot",
-            )
-            return AgentResult(
-                success=True,
-                output=result.get("conclusion"),
-                metadata={
-                    "confidence": result.get("confidence"),
-                    "modes_tried": result.get("modes_tried"),
-                },
-            )
+            from curriculum import CurriculumEngine
+
+            ans = CurriculumEngine().ask(task)
+            if ans.get("matched") and ans.get("answer"):
+                snippets.append(str(ans["answer"]))
+                sources.append(ans.get("source") or "curriculum")
         except Exception as e:
-            return AgentResult(success=False, error=str(e))
+            logger.debug(f"research curriculum: {e}")
+
+        # 2) Unified retrieve / GraphRAG
+        try:
+            from memory.retrieve import retrieve
+
+            ret = retrieve(task, top_k=6)
+            for c in ret.get("candidates") or []:
+                snippets.append(c.get("content", ""))
+                sources.append(c.get("source", "retrieve"))
+        except Exception:
+            try:
+                from knowledge.graphrag import GraphRAG
+
+                gr = GraphRAG().retrieve(task, top_k=5)
+                snippets.extend(gr.get("combined") or [])
+                sources.append("graphrag")
+            except Exception as e:
+                logger.debug(f"research retrieve: {e}")
+
+        # 3) Optional LLM synthesis
+        synthesis = None
+        llm_used = False
+        try:
+            from brain.llm.client import get_llm_client
+
+            client = get_llm_client()
+            if client.is_available and snippets:
+                ctx = "\n".join(f"- {s}" for s in snippets[:8] if s)
+                synthesis = client.complete(
+                    f"Sual: {task}\n\nMəlumat:\n{ctx}\n\nQısa, dəqiq cavab yaz.",
+                    system="Sən araşdırma xülasəçisisən. Yalnız verilən məlumata əsaslan.",
+                    temperature=0.2,
+                    max_tokens=400,
+                )
+                llm_used = True
+        except Exception:
+            pass
+
+        if not snippets and not synthesis:
+            return AgentResult(
+                success=False,
+                error="Heç bir evidence tapılmadı",
+                metadata={"experimental": True},
+            )
+
+        output = synthesis or (snippets[0] if snippets else "")
+        return AgentResult(
+            success=True,
+            output=output,
+            metadata={
+                "snippets": snippets[:10],
+                "sources": sources[:10],
+                "llm_used": llm_used,
+                "experimental": True,
+            },
+        )

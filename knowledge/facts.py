@@ -1,4 +1,4 @@
-"""Fact Store – diskə yazılan fakt bazası (Faza 1)."""
+"""Fact Store – disk JSON + get."""
 
 from __future__ import annotations
 
@@ -36,6 +36,9 @@ class FactStore:
         if self.auto_persist:
             self.save()
         return fact_id
+
+    def get(self, fact_id: str) -> Optional[Dict[str, Any]]:
+        return self._facts.get(fact_id)
 
     def search(self, query: str, top_k: int = 10) -> List[Dict]:
         q = query.lower()

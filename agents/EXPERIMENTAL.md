@@ -1,17 +1,20 @@
 # Experimental agents
 
-Production (Faza 5+):
+These are **not production**. They exist for architecture exploration.
 
-- `react`
-- `coding` (sandbox only)
+| Type | Status |
+|------|--------|
+| `research` | Functional: retrieve + curriculum + optional LLM |
+| `pev` | Thin: delegates execute to `react` |
+| `reflexion` | Thin: ReasoningEngine 1–2 rounds |
+| `vision` | Stub only – no VLM |
+| `voice` | Stub only – no STT/TTS |
+| `executor` | Helper / experimental |
 
-Experimental (stub / incomplete – `allow_experimental=True` lazımdır):
+Production agents: **`react`**, **`coding`** only.
 
-- `research`
-- `executor`
-- `vision`
-- `voice`
-- `pev`
-- `reflexion`
-
-ML stack (`models/`, legacy train CLI) cognitive path-dən ayrıdır; optional.
+```python
+from agents.manager import agent_manager
+agent = agent_manager.create("vision", allow_experimental=True)
+# expect success=False with clear error for vision/voice stubs
+```

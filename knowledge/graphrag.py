@@ -1,8 +1,4 @@
-"""
-GraphRAG-style retrieval – vektor + bilik qrafı + faktlar.
-
-İlham: GraphRAG (Microsoft) – lokal, asılılıqsız sadə versiya.
-"""
+"""GraphRAG hybrid – registry-backed."""
 
 from __future__ import annotations
 
@@ -12,8 +8,6 @@ from core.logger import logger
 
 
 class GraphRAG:
-    """Hybrid retrieval over vector memory + knowledge graph + facts."""
-
     def __init__(self):
         self._vector = None
         self._graph = None
@@ -23,24 +17,26 @@ class GraphRAG:
         if self._vector is None:
             try:
                 from memory.vector_memory import VectorMemory
+
                 self._vector = VectorMemory()
             except Exception:
                 self._vector = None
         if self._graph is None:
             try:
-                from knowledge.graph import KnowledgeGraph
-                self._graph = KnowledgeGraph()
+                from knowledge.registry import get_graph
+
+                self._graph = get_graph()
             except Exception:
                 self._graph = None
         if self._facts is None:
             try:
-                from knowledge.facts import FactStore
-                self._facts = FactStore()
+                from knowledge.registry import get_fact_store
+
+                self._facts = get_fact_store()
             except Exception:
                 self._facts = None
 
     def ingest(self, text: str, entities: Optional[List[str]] = None) -> None:
-        """Mətn + entity-ləri qraf və vektor yaddaşa yaz."""
         self._ensure()
         if self._vector:
             self._vector.add(text)
@@ -69,29 +65,41 @@ class GraphRAG:
             "nodes": [],
             "graph_context": [],
             "combined": [],
+            "unified": [],
         }
 
-        # Vector
+        # Prefer UnifiedRetriever when available
+        try:
+            from memory.retrieve import retrieve as unified
+
+            ur = unified(query, top_k=top_k)
+            result["unified"] = ur.get("candidates") or []
+            result["combined"] = [c.get("content", "") for c in result["unified"]]
+            if result["combined"]:
+                return result
+        except Exception:
+            pass
+
         if self._vector:
             hits = self._vector.search(query, top_k=top_k)
             result["vector"] = [{"text": t, "score": s} for t, s in hits]
 
-        # Facts
         if self._facts:
             result["facts"] = self._facts.search(query, top_k=top_k)
 
-        # Graph nodes + 1-hop neighbors
         if self._graph:
-            nodes = self._graph.find_by_label(query.split()[0] if query else "")
+            tokens = (query or "").split()
+            seed = tokens[0] if tokens else ""
+            nodes = self._graph.find_by_label(seed) if seed else []
+            if not nodes:
+                nodes = self._graph.query(query, top_k=top_k)
             result["nodes"] = nodes
-            for n in nodes[:3]:
-                neighbors = self._graph.neighbors(n["id"])
-                for nb, rel in neighbors[:5]:
+            for n in nodes[:5]:
+                for nb, rel in self._graph.neighbors(n["id"])[:5]:
                     result["graph_context"].append(
                         f"{n['label']} --{rel}--> {nb.get('label')}"
                     )
 
-        # Combined ranked snippets
         combined: List[str] = []
         for v in result["vector"]:
             combined.append(v["text"])
@@ -102,7 +110,6 @@ class GraphRAG:
                 combined.append(str(f))
         combined.extend(result["graph_context"])
 
-        # Dedupe
         seen = set()
         unique = []
         for c in combined:
@@ -111,7 +118,6 @@ class GraphRAG:
                 seen.add(k)
                 unique.append(c)
         result["combined"] = unique[: top_k + 3]
-
         logger.debug(f"GraphRAG retrieve: {len(result['combined'])} snippets")
         return result
 

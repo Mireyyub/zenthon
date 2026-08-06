@@ -1,40 +1,25 @@
-"""Vision Agent – şəkil analizi (placeholder + brain inteqrasiyası)."""
+"""Vision Agent – EXPERIMENTAL stub (no real vision pipeline)."""
+
+from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
 from agents.base import BaseAgent, AgentResult
-from core.logger import logger
 
 
 class VisionAgent(BaseAgent):
-    def __init__(self, name: str = "VisionAgent", description: str = "Şəkil analizi və obyekt tanıma"):
+    PRODUCTION = False
+
+    def __init__(self, name: str = "VisionAgent", description: str = "Experimental vision stub"):
         super().__init__(name=name, description=description)
 
     def run(self, task: str, context: Optional[Dict[str, Any]] = None) -> AgentResult:
-        logger.info(f"VisionAgent: {task[:80]}")
-        context = context or {}
-        image_path = context.get("image_path") or context.get("image")
-
-        # Multimodal perception vasitəsilə
-        try:
-            from brain import ThinkingBrain
-            brain = ThinkingBrain(name="VisionBrain")
-            input_data = {"text": task}
-            if image_path:
-                input_data["image_path"] = image_path
-            result = brain.think(
-                input_data,
-                goal="Şəkili və mətni birlikdə analiz et",
-                reasoning_mode="cot",
-            )
-            return AgentResult(
-                success=True,
-                output=result.get("conclusion"),
-                metadata={
-                    "modality": result.get("modality"),
-                    "confidence": result.get("confidence"),
-                    "image": image_path,
-                },
-            )
-        except Exception as e:
-            return AgentResult(success=False, error=str(e))
+        return AgentResult(
+            success=False,
+            error="Vision pipeline not implemented. Experimental stub only.",
+            metadata={
+                "experimental": True,
+                "task": (task or "")[:120],
+                "hint": "Integrate real VLM separately; do not treat this as production.",
+            },
+        )

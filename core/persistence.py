@@ -1,14 +1,12 @@
-"""
-Leon disk persistence helpers (Faza 1).
-
-JSON / JSONL yaz-oxu – FactStore, Graph, Learning, VectorMemory.
-"""
+"""Leon disk persistence – atomic JSON write."""
 
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from core.logger import logger
 
@@ -18,9 +16,25 @@ def _path(p: Path | str) -> Path:
 
 
 def write_json(path: Path | str, data: Any) -> None:
+    """Atomic-ish write: temp file + replace."""
     path = _path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    payload = json.dumps(data, ensure_ascii=False, indent=2, default=str)
+    fd, tmp_name = tempfile.mkstemp(prefix=".leon_", suffix=".json", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
+        except Exception:
+            pass
+        # fallback non-atomic
+        path.write_text(payload, encoding="utf-8")
 
 
 def read_json(path: Path | str, default: Any = None) -> Any:
