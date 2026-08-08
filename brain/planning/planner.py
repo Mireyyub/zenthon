@@ -1,6 +1,5 @@
 """
-Minimal Planner – create / list / update / run / replan.
-Includes self_improve action.
+Planner – create / list / update / run / replan + long-horizon + world_state.
 """
 
 from __future__ import annotations
@@ -205,6 +204,12 @@ class Planner:
                 task.result = result
                 task.status = "done"
                 task.error = None
+                try:
+                    from brain.world_state import WorldState
+
+                    WorldState().apply_outcome(task.action or "noop", result)
+                except Exception:
+                    pass
             except Exception as e:
                 task.status = "failed"
                 task.error = str(e)
@@ -256,6 +261,15 @@ class Planner:
             q = params.get("query") or task.title
             return reasoning_engine.reason(q, strategy=params.get("strategy", "auto"))
 
+        if action == "cycle":
+            from brain.cognitive_cycle import CognitiveCycle
+
+            return CognitiveCycle().run(
+                params.get("query") or task.title,
+                goal=params.get("goal"),
+                learn=bool(params.get("learn", True)),
+            )
+
         if action == "retrieve":
             from memory.retrieve import retrieve
 
@@ -286,6 +300,27 @@ class Planner:
             from curriculum import CurriculumEngine
 
             return CurriculumEngine().run_eval(params.get("volume_id", "01"))
+
+        if action == "transfer_eval":
+            from evaluation.transfer import transfer_eval
+
+            return transfer_eval(
+                source_volumes=params.get("sources") or ["01", "02"],
+                target_volume=params.get("target") or "03",
+                teach_source=bool(params.get("teach_source", True)),
+                teach_target_after=bool(params.get("teach_target_after", True)),
+            )
+
+        if action == "world_flag":
+            from brain.world_state import WorldState
+
+            WorldState().set_flag(params.get("key", "flag"), params.get("value", True), note=task.title)
+            return {"ok": True, "snapshot": WorldState().snapshot()}
+
+        if action == "human_suite":
+            from evaluation.human_suite import run_model_answers
+
+            return run_model_answers()
 
         raise ValueError(f"unknown action: {action}")
 
@@ -362,7 +397,6 @@ def curriculum_learn_plan(volume_id: str = "01") -> Plan:
 
 
 def self_improve_plan(volumes: Optional[List[str]] = None) -> Plan:
-    """Plan that runs Leon's self-improvement cycle."""
     planner = Planner()
     t1, t2 = new_task_id(), new_task_id()
     return planner.create(
@@ -383,6 +417,95 @@ def self_improve_plan(volumes: Optional[List[str]] = None) -> Plan:
                 "depends_on": [t1],
             },
         ],
+    )
+
+
+def long_horizon_plan(
+    *,
+    volumes: Optional[List[str]] = None,
+    transfer_target: str = "03",
+) -> Plan:
+    """Multi-volume teach → transfer eval → human suite → save (world flags)."""
+    vols = volumes or ["01", "02", "03"]
+    planner = Planner()
+    ids = [new_task_id() for _ in range(len(vols) + 4)]
+    tasks: List[Dict[str, Any]] = []
+    prev = None
+    for i, vid in enumerate(vols):
+        tid = ids[i]
+        tasks.append(
+            {
+                "id": tid,
+                "title": f"Teach volume {vid}",
+                "action": "teach_volume",
+                "params": {"volume_id": vid},
+                "depends_on": [prev] if prev else [],
+            }
+        )
+        tasks.append(
+            {
+                "id": new_task_id(),
+                "title": f"World flag taught_{vid}",
+                "action": "world_flag",
+                "params": {"key": f"taught_{vid}", "value": True},
+                "depends_on": [tid],
+            }
+        )
+        prev = tid
+
+    t_transfer = ids[len(vols)]
+    t_human = ids[len(vols) + 1]
+    t_save = ids[len(vols) + 2]
+    t_cycle = ids[len(vols) + 3]
+
+    tasks.append(
+        {
+            "id": t_transfer,
+            "title": f"Transfer eval → {transfer_target}",
+            "action": "transfer_eval",
+            "params": {
+                "sources": vols[:2] if len(vols) >= 2 else vols,
+                "target": transfer_target,
+            },
+            "depends_on": [prev] if prev else [],
+        }
+    )
+    tasks.append(
+        {
+            "id": t_cycle,
+            "title": "Cognitive cycle probe",
+            "action": "cycle",
+            "params": {"query": "Alma özünə bərabərdirmi?", "learn": True},
+            "depends_on": [t_transfer],
+        }
+    )
+    tasks.append(
+        {
+            "id": t_human,
+            "title": "Human eval package",
+            "action": "human_suite",
+            "params": {},
+            "depends_on": [t_cycle],
+        }
+    )
+    tasks.append(
+        {
+            "id": t_save,
+            "title": "Save long-horizon state",
+            "action": "save_state",
+            "params": {"name": "long_horizon"},
+            "depends_on": [t_human],
+        }
+    )
+
+    return planner.create(
+        goal=f"Long-horizon: teach {vols} + transfer→{transfer_target} + human suite",
+        metadata={
+            "template": "long_horizon",
+            "volumes": vols,
+            "transfer_target": transfer_target,
+        },
+        tasks=tasks,
     )
 
 
