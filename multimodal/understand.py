@@ -1,5 +1,5 @@
 """
-Image understanding – local visual features + optional VLM multi-pass.
+Image understanding – local visual features + regions + optional VLM multi-pass.
 Never fakes VLM success when model is missing.
 """
 
@@ -16,6 +16,32 @@ def _require_pil():
         raise RuntimeError("Pillow yoxdur. pip install Pillow") from e
 
 
+_COLOR_NAMES = [
+    ((180, 40, 40), "red"),
+    ((40, 140, 40), "green"),
+    ((40, 40, 180), "blue"),
+    ((200, 180, 40), "yellow"),
+    ((200, 100, 30), "orange"),
+    ((120, 60, 140), "purple"),
+    ((30, 30, 30), "black"),
+    ((220, 220, 220), "white"),
+    ((140, 90, 50), "brown"),
+    ((100, 100, 100), "gray"),
+    ((40, 160, 160), "cyan"),
+    ((200, 80, 140), "pink"),
+]
+
+
+def _nearest_color_name(rgb: Tuple[int, int, int]) -> str:
+    r, g, b = rgb
+    best, best_d = "mixed", 1e18
+    for (cr, cg, cb), name in _COLOR_NAMES:
+        d = (r - cr) ** 2 + (g - cg) ** 2 + (b - cb) ** 2
+        if d < best_d:
+            best_d, best = d, name
+    return best
+
+
 def local_analyze(path: str) -> Dict[str, Any]:
     """Deterministic visual features without neural nets."""
     Image = _require_pil()
@@ -29,16 +55,13 @@ def local_analyze(path: str) -> Dict[str, Any]:
         im.load()
         rgb = im.convert("RGB")
         w, h = rgb.size
-        # downsample for stats
         sample = rgb.resize((max(8, min(64, w)), max(8, min(64, h))))
         stat = ImageStat.Stat(sample)
         mean = [round(x, 1) for x in stat.mean]
         stddev = [round(x, 1) for x in stat.stddev]
 
-        # dominant colors via 4x4 grid average buckets
         small = rgb.resize((4, 4))
         dom = [tuple(px) for px in small.getdata()]
-        # unique-ish top by frequency on 16x16 quant
         q = rgb.resize((32, 32))
         counts: Dict[Tuple[int, int, int], int] = {}
         for px in q.getdata():
@@ -46,11 +69,9 @@ def local_analyze(path: str) -> Dict[str, Any]:
             counts[key] = counts.get(key, 0) + 1
         top_colors = sorted(counts.items(), key=lambda x: -x[1])[:5]
 
-        # brightness / contrast proxies
         brightness = sum(mean) / 3.0
         contrast = sum(stddev) / 3.0
 
-        # edge density heuristic
         gray = rgb.convert("L").filter(ImageFilter.FIND_EDGES)
         edge_stat = ImageStat.Stat(gray.resize((48, 48)))
         edge_density = round(edge_stat.mean[0] / 255.0, 3)
@@ -59,8 +80,33 @@ def local_analyze(path: str) -> Dict[str, Any]:
         orientation = (
             "landscape" if w > h * 1.1 else ("portrait" if h > w * 1.1 else "square")
         )
-
         mood = _mood_from_stats(brightness, contrast, mean)
+
+        # quadrant regions
+        regions = {}
+        for name, box in (
+            ("tl", (0, 0, w // 2, h // 2)),
+            ("tr", (w // 2, 0, w, h // 2)),
+            ("bl", (0, h // 2, w // 2, h)),
+            ("br", (w // 2, h // 2, w, h)),
+        ):
+            crop = rgb.crop(box).resize((16, 16))
+            st = ImageStat.Stat(crop)
+            m = [round(x, 1) for x in st.mean]
+            regions[name] = {
+                "mean_rgb": m,
+                "brightness": round(sum(m) / 3.0, 1),
+                "color": _nearest_color_name((int(m[0]), int(m[1]), int(m[2]))),
+            }
+
+        palette = [
+            {
+                "rgb": list(c),
+                "weight": n,
+                "name": _nearest_color_name(c),
+            }
+            for c, n in top_colors
+        ]
 
     return {
         "ok": True,
@@ -74,10 +120,12 @@ def local_analyze(path: str) -> Dict[str, Any]:
         "brightness": round(brightness, 1),
         "contrast": round(contrast, 1),
         "edge_density": edge_density,
-        "dominant_colors": [{"rgb": list(c), "weight": n} for c, n in top_colors],
+        "dominant_colors": palette,
+        "palette_names": [c["name"] for c in palette],
+        "regions": regions,
         "sample_grid_rgb": [list(c) for c in dom],
         "mood_heuristic": mood,
-        "method": "local_stats",
+        "method": "local_stats+regions",
     }
 
 
@@ -108,12 +156,6 @@ def understand_image(
     inject_facts: bool = False,
     model: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Full understand pipeline:
-    1) local_analyze always
-    2) optional VLM multi-prompt (caption, objects, scene)
-    3) optional inject summary into FactStore
-    """
     local = local_analyze(path)
     if not local.get("ok"):
         return local
@@ -127,13 +169,14 @@ def understand_image(
         "answers": {},
     }
 
-    # textual summary from local
-    dc = local.get("dominant_colors") or []
-    color_txt = ", ".join(str(c.get("rgb")) for c in dc[:3])
+    names = local.get("palette_names") or []
+    color_txt = ", ".join(names[:3]) if names else "?"
+    regs = local.get("regions") or {}
+    reg_txt = "; ".join(f"{k}:{v.get('color')}" for k, v in regs.items())
     local_summary = (
         f"Şəkil {local['width']}x{local['height']} ({local['orientation']}); "
-        f"mood={local['mood_heuristic']}; edge_density={local['edge_density']}; "
-        f"dominant≈[{color_txt}]"
+        f"mood={local['mood_heuristic']}; edge={local['edge_density']}; "
+        f"palette=[{color_txt}]; regions=[{reg_txt}]"
     )
     report["summary"] = local_summary
 
@@ -146,6 +189,7 @@ def understand_image(
                 "caption": "Bir-iki cümlə ilə şəkli təsvir et.",
                 "objects": "Şəkildəki əsas obyektləri siyahıla (vergüllə).",
                 "scene": "Səhnə növü nədir? (interyer/ext/outdoor/abstract/digər) Qısa cavab.",
+                "colors": "Əsas rəngləri qısa siyahıla.",
             }
             if question:
                 prompts["user_question"] = question
@@ -162,9 +206,7 @@ def understand_image(
             )
             vlm_out["ok"] = ok_any
             if report["answers"].get("caption"):
-                report["summary"] = (
-                    report["answers"]["caption"] + " | " + local_summary
-                )
+                report["summary"] = report["answers"]["caption"] + " | " + local_summary
             report["vlm"] = vlm_out
         else:
             report["vlm"] = {

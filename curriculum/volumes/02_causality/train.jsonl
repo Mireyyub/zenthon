@@ -8,3 +8,8 @@
 {"id":"000028","instruction":"İki hadisə eyni anda artsa, biri digərinin səbəbidirmi?","output":"Mütləq deyil.","lesson":"000008","confidence":0.9,"tags":["correlation"]}
 {"id":"000029","instruction":"Səbəbiyyət üçün nə lazımdır?","output":"Mexanizm və zamansal sıra.","lesson":"000008","confidence":0.85,"tags":["correlation"]}
 {"id":"000030","instruction":"Səbəb zamanca nəticədən əvvəl gəlirmi?","output":"Bəli.","lesson":"000006","confidence":0.9,"tags":["cause"]}
+{"id":"000046","instruction":"Od tüstüyə səbəb ola bilərmi?","output":"Bəli.","lesson":"000006","confidence":0.9,"tags":["cause"]}
+{"id":"000047","instruction":"Effekt səbəbdən sonra gəlirmi?","output":"Bəli.","lesson":"000007","confidence":0.9,"tags":["effect"]}
+{"id":"000048","instruction":"Korrelyasiya ilə səbəbiyyət eynidirmi?","output":"Xeyr.","lesson":"000008","confidence":0.9,"tags":["correlation"]}
+{"id":"000049","instruction":"Zamansal sıra səbəbiyyət üçün yetərlidirmi?","output":"Xeyr. Mexanizm də lazımdır.","lesson":"000008","confidence":0.85,"tags":["correlation"]}
+{"id":"000050","instruction":"Səbəb olmadan nəticə ola bilərmi?","output":"Normal qaydada xeyr.","lesson":"000007","confidence":0.8,"tags":["effect"]}

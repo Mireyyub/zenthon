@@ -1,0 +1,16 @@
+{
+  "volume": "03",
+  "title": "Logic",
+  "version": "1.0.0",
+  "lessons": ["000009", "000010", "000011"],
+  "target_concepts": [
+    "Identiklik",
+    "İnkar",
+    "Nəticə",
+    "Ziddiyyət",
+    "Implikasiya"
+  ],
+  "depends_on": ["01", "02"],
+  "train_pairs": 15,
+  "eval_pairs": 8
+}

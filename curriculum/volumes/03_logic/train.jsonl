@@ -1,0 +1,15 @@
+{"id":"000031","instruction":"Alma özünə bərabərdirmi?","output":"Bəli.","lesson":"000009","confidence":0.95,"tags":["identity"]}
+{"id":"000032","instruction":"Daş = daş doğrudurmu?","output":"Bəli.","lesson":"000009","confidence":0.95,"tags":["identity"]}
+{"id":"000033","instruction":"Alma = daş doğrudurmu?","output":"Xeyr.","lesson":"000009","confidence":0.95,"tags":["identity"]}
+{"id":"000034","instruction":"İnsan = insan doğrudurmu?","output":"Bəli.","lesson":"000009","confidence":0.95,"tags":["identity"]}
+{"id":"000035","instruction":"P və ¬P eyni anda doğru ola bilərmi?","output":"Xeyr.","lesson":"000010","confidence":0.95,"tags":["negation"]}
+{"id":"000036","instruction":"Daş mövcud deyil — bu, Daş mövcuddur iddiasının inkarıdırmı?","output":"Bəli.","lesson":"000010","confidence":0.9,"tags":["negation"]}
+{"id":"000037","instruction":"Alma daş deyil — bu inkar iddiasıdırmı?","output":"Bəli.","lesson":"000010","confidence":0.9,"tags":["negation"]}
+{"id":"000038","instruction":"Ziddiyyət qəbul edilə bilərmi?","output":"Xeyr.","lesson":"000010","confidence":0.95,"tags":["negation"]}
+{"id":"000039","instruction":"Əgər A → B və A doğrudursa, B doğrudurmu?","output":"Bəli.","lesson":"000011","confidence":0.95,"tags":["inference"]}
+{"id":"000040","instruction":"Yalnız B doğru olsa, A mütləq doğrudurmu?","output":"Xeyr.","lesson":"000011","confidence":0.9,"tags":["inference"]}
+{"id":"000041","instruction":"Alma meyvədir və meyvələr bitki mənşəlidirsə, alma bitki mənşəlidirmi?","output":"Bəli.","lesson":"000011","confidence":0.9,"tags":["inference"]}
+{"id":"000042","instruction":"Modus ponens nədir?","output":"A → B və A doğru olduqda B-nin doğru olması.","lesson":"000011","confidence":0.85,"tags":["inference"]}
+{"id":"000043","instruction":"Oxşarlıq eynilik deməkdirmi?","output":"Xeyr.","lesson":"000009","confidence":0.9,"tags":["identity"]}
+{"id":"000044","instruction":"İnkar nədir?","output":"Bir iddianın əksini ifadə edən fikir.","lesson":"000010","confidence":0.85,"tags":["negation"]}
+{"id":"000045","instruction":"Nəticə çıxarma nədir?","output":"Verilmiş qayda və faktdan yeni iddia törətmək.","lesson":"000011","confidence":0.85,"tags":["inference"]}

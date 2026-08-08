@@ -14,22 +14,49 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install minimal deps
+      - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install pytest fastapi uvicorn pydantic httpx
-      - name: Unit cognitive + security
+          pip install pytest fastapi uvicorn pydantic httpx Pillow
+      - name: Unit cognitive + security + self + multimodal + vol03
         run: |
           python -m pytest \
             tests/unit/test_facts_graph_learning.py \
             tests/unit/test_security.py \
             tests/unit/test_curriculum_ask.py \
+            tests/unit/test_curriculum_vol03.py \
             tests/unit/test_research_and_persist.py \
             tests/unit/test_vector_memory.py \
+            tests/unit/test_self_view.py \
+            tests/unit/test_multimodal_image.py \
+            tests/unit/test_self_improve.py \
+            tests/unit/test_self_mutate.py \
             -q --tb=short
       - name: Integration smoke
         run: |
-          python -m pytest tests/integration/test_phases_smoke.py -q --tb=short
+          python -m pytest tests/integration/test_phases_smoke.py tests/integration/test_cognitive_persist.py -q --tb=short
       - name: Verify phases 1-8
         run: |
           python scripts/verify_phases_1_8.py
+      - name: System body + policy bind
+        run: |
+          python - <<'PY'
+          from brain.policy_bind import bind_mutate_policy
+          from brain.self_view import SelfView
+          assert bind_mutate_policy()
+          body = SelfView().body()
+          assert body.get("identity") == "Leon"
+          assert body.get("summary", {}).get("python_modules", 0) > 10
+          print("system body ok", body["summary"])
+          PY
+      - name: Curriculum volumes 01-03 load
+        run: |
+          python - <<'PY'
+          from curriculum.volume import list_volumes, load_volume
+          vols = list_volumes()
+          print("volumes", vols)
+          for vid in ("01", "02", "03"):
+              m = load_volume(vid)
+              assert m.get("lessons"), vid
+              print(vid, m.get("title") or m.get("name"), len(m.get("lessons") or []))
+          PY
