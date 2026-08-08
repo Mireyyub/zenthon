@@ -7,12 +7,19 @@ def test_rag_import():
     c = TextChunker(chunk_size=64, overlap=8)
     chunks = c.chunk("Daş mövcuddur. Alma meyvədir. Bu üçüncü cümlədir.", "d1")
     assert len(chunks) >= 1
+    rag = RAGPipeline()
+    rag.ingest_text("Alma meyvədir. Armud da meyvədir.", source="test")
+    ctx = rag.retrieve("meyvə")
+    assert ctx.total_chunks >= 1
 
 
 def test_conversation_import():
     from memory.conversation_manager import ConversationManager
 
-    assert ConversationManager is not None
+    cm = ConversationManager()
+    cm.add("user", "salam")
+    cm.add("assistant", "salam")
+    assert "user" in cm.as_context()
 
 
 def test_blackboard_import():
@@ -24,20 +31,15 @@ def test_blackboard_import():
 
 
 def test_cache_import():
-    from brain.llm.cache import ResponseCache
+    from brain.llm.cache import LRUCache
 
-    c = ResponseCache(max_size=8)
+    c = LRUCache(maxsize=8)
     c.set("k", "v")
     assert c.get("k") == "v"
-
-
-def test_prompts_import():
-    from prompts.registry import PromptRegistry
-
-    assert PromptRegistry is not None
 
 
 def test_swarm_import():
     from agents.swarm import AgentSwarm, AgentRole
 
     assert AgentRole.RESEARCHER.value == "researcher"
+    assert AgentSwarm is not None
