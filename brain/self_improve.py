@@ -1,19 +1,30 @@
 """
-Leon Self-Improvement Engine
+Leon Self-Improvement Engine (v2)
 
-Safe, measurable loop (NOT unrestricted code self-rewrite):
-  diagnose → propose → apply → verify
+Closed loop:
+  diagnose → propose → apply → verify → (repeat until target)
 
-Improves knowledge/skills via curriculum re-teach, learning from eval failures,
-and optional plan execution. Source code of Leon is never modified.
+Enhancements:
+- Multi-round adaptive cycles with early stop
+- Weak-case topic clustering
+- Practice reasoning on failures after learning
+- Optional train.jsonl mutation bridge (SelfMutateEngine)
+- Trace reflection → knowledge
+- History-aware action prioritization
+- Graph is_a hints from category-style QAs
+
+Code mutation is optional and still gated by LEON_ALLOW_MUTATE.
+Default scope remains knowledge + curriculum + learning.
 """
 
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import json
+import re
 import uuid
 
 from core.logger import logger
@@ -32,11 +43,13 @@ def _reports_dir() -> Path:
 
 
 class SelfImproveEngine:
-    """Closed-loop self-improvement over knowledge + eval performance."""
+    TARGET_PASS = 0.95
+    MAX_ROUNDS = 3
 
     def __init__(self):
         self.dir = _reports_dir()
-        self._history: List[Dict[str, Any]] = []
+        hist = read_json(self.dir / "history.json", default={"runs": []}) or {}
+        self._history: List[Dict[str, Any]] = list(hist.get("runs") or [])
 
     # ------------------------------------------------------------------ diagnose
     def diagnose(self, volumes: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -70,11 +83,13 @@ class SelfImproveEngine:
                             "expected": c.get("expected"),
                             "got": c.get("got"),
                             "source": c.get("source"),
+                            "topic": self._topic(c.get("question") or ""),
                         }
                     )
 
-        # recent reasoning UNKNOWN / low confidence from traces
-        weak_traces = self._scan_traces(limit=30)
+        weak_traces = self._scan_traces(limit=40)
+        # also probe reason() on a sample of weak questions for live signal
+        live_weak = self._live_probe(weak_cases[:8])
 
         learning_stats = {}
         try:
@@ -84,9 +99,11 @@ class SelfImproveEngine:
         except Exception:
             pass
 
-        severity = "ok"
+        topics = Counter(c.get("topic") or "other" for c in weak_cases)
         rates = [e.get("pass_rate") for e in evals if isinstance(e.get("pass_rate"), (int, float))]
         avg = sum(rates) / len(rates) if rates else 0.0
+
+        severity = "ok"
         if avg < 0.5 or len(weak_cases) >= 5:
             severity = "high"
         elif avg < 0.85 or weak_cases:
@@ -99,13 +116,86 @@ class SelfImproveEngine:
             "evals": evals,
             "weak_cases": weak_cases,
             "weak_traces": weak_traces,
+            "live_probe": live_weak,
+            "topic_counts": dict(topics),
             "learning": learning_stats,
             "volumes": vols,
+            "recommendations": self._recommendations(severity, avg, weak_cases, topics),
         }
         write_json(self.dir / "last_diagnose.json", out)
         return out
 
-    def _scan_traces(self, limit: int = 30) -> List[Dict[str, Any]]:
+    def _topic(self, q: str) -> str:
+        low = (q or "").lower()
+        if any(x in low for x in ("mövcud", "varlıq", "exist")):
+            return "existence"
+        if "obyekt" in low or "object" in low:
+            return "object"
+        if any(x in low for x in ("xüsusiyyət", "rəng", "forma", "property")):
+            return "property"
+        if "kateqor" in low or "category" in low:
+            return "category"
+        if any(x in low for x in ("fırlan", "əlaqə", "relation", "ətraf")):
+            return "relationship"
+        if any(x in low for x in ("səbəb", "nəticə", "cause")):
+            return "causality"
+        return "other"
+
+    def _recommendations(
+        self,
+        severity: str,
+        avg: float,
+        weak: List[Dict],
+        topics: Counter,
+    ) -> List[str]:
+        recs = []
+        if severity == "ok":
+            recs.append("Pass rate sağlamdır; yalnız monitoring.")
+            return recs
+        if avg < 0.9:
+            recs.append("Zəif volume-ları yenidən teach et.")
+        if weak:
+            recs.append(f"{len(weak)} uğursuz QA → LearningEngine + FactStore.")
+        top = topics.most_common(2)
+        if top:
+            recs.append("Prioritet mövzular: " + ", ".join(f"{t}({n})" for t, n in top))
+        if severity == "high":
+            recs.append("train.jsonl mutasiyası (mutate diagnose) nəzərdən keçir.")
+        return recs
+
+    def _live_probe(self, cases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        out = []
+        try:
+            from brain.reasoning.engine import ReasoningEngine
+
+            eng = ReasoningEngine(persist_traces=False)
+        except Exception:
+            return out
+        for c in cases:
+            q = c.get("question") or ""
+            if not q:
+                continue
+            try:
+                r = eng.reason(q, use_brain=False)
+                ans = str(r.get("answer") or r.get("conclusion") or "")
+                exp = str(c.get("expected") or "")
+                ok = bool(exp) and (
+                    exp.lower() in ans.lower() or ans.lower() in exp.lower()
+                )
+                out.append(
+                    {
+                        "question": q,
+                        "expected": exp,
+                        "got": ans,
+                        "confidence": r.get("confidence"),
+                        "pass": ok,
+                    }
+                )
+            except Exception as e:
+                out.append({"question": q, "error": str(e), "pass": False})
+        return out
+
+    def _scan_traces(self, limit: int = 40) -> List[Dict[str, Any]]:
         try:
             from core.config import config
 
@@ -122,7 +212,7 @@ class SelfImproveEngine:
             data = read_json(f, default={})
             if not isinstance(data, dict):
                 continue
-            ans = str(data.get("selected_conclusion") or "")
+            ans = str(data.get("selected_conclusion") or data.get("answer") or "")
             conf = float(data.get("confidence") or 0)
             if ans == "UNKNOWN" or conf < 0.45 or data.get("validation") == "conflict":
                 weak.append(
@@ -137,51 +227,106 @@ class SelfImproveEngine:
         return weak
 
     # ------------------------------------------------------------------ propose
-    def propose(self, diagnosis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def propose(
+        self,
+        diagnosis: Optional[Dict[str, Any]] = None,
+        *,
+        with_mutate: bool = False,
+        with_practice: bool = True,
+    ) -> Dict[str, Any]:
         diag = diagnosis or self.diagnose()
         actions: List[Dict[str, Any]] = []
 
-        # 1) Re-teach weak volumes
+        # adaptive boost from history: if past teach helped, keep priority high
+        hist_boost = self._history_boost()
+
         for e in diag.get("evals") or []:
             rate = e.get("pass_rate")
             if e.get("error") or (isinstance(rate, (int, float)) and rate < 0.9):
+                pr = 10 if (rate or 0) < 0.5 else 6
+                pr += hist_boost.get("teach_volume", 0)
                 actions.append(
                     {
                         "type": "teach_volume",
                         "volume_id": e.get("volume_id"),
                         "reason": f"pass_rate={rate}",
-                        "priority": 10 if (rate or 0) < 0.5 else 5,
+                        "priority": pr,
                     }
                 )
 
-        # 2) Learn failed Q→expected as validated knowledge
+        # dedupe learn_qa by normalized question
+        seen_q = set()
         for case in diag.get("weak_cases") or []:
             q, exp = case.get("question"), case.get("expected")
-            if q and exp:
+            if not q or not exp:
+                continue
+            key = re.sub(r"\s+", " ", q.strip().lower())
+            if key in seen_q:
+                continue
+            seen_q.add(key)
+            actions.append(
+                {
+                    "type": "learn_qa",
+                    "question": q,
+                    "answer": exp,
+                    "volume_id": case.get("volume_id"),
+                    "topic": case.get("topic"),
+                    "priority": 9,
+                }
+            )
+            if with_practice:
                 actions.append(
                     {
-                        "type": "learn_qa",
+                        "type": "practice_reason",
+                        "question": q,
+                        "expected": exp,
+                        "priority": 4,
+                    }
+                )
+            # category → graph hint
+            if case.get("topic") == "category":
+                actions.append(
+                    {
+                        "type": "graph_hint",
                         "question": q,
                         "answer": exp,
-                        "volume_id": case.get("volume_id"),
-                        "priority": 8,
+                        "priority": 5,
                     }
                 )
 
-        # 3) Persist improvement train pairs for audit
+        # reflect weak traces: if query looks like yes/no curriculum, skip; else store as pending note
+        for tr in (diag.get("weak_traces") or [])[:10]:
+            q = tr.get("query")
+            if q:
+                actions.append(
+                    {
+                        "type": "reflect_trace",
+                        "query": q,
+                        "conclusion": tr.get("conclusion"),
+                        "confidence": tr.get("confidence"),
+                        "priority": 3,
+                    }
+                )
+
         if diag.get("weak_cases"):
             actions.append(
                 {
                     "type": "write_failure_dataset",
                     "count": len(diag["weak_cases"]),
-                    "priority": 3,
+                    "priority": 2,
                 }
             )
 
-        # 4) Save state after improvements
-        actions.append({"type": "save_state", "name": "self_improve", "priority": 1})
+        if with_mutate and (diag.get("severity") in ("medium", "high") or diag.get("weak_cases")):
+            actions.append(
+                {
+                    "type": "mutate_train",
+                    "reason": "persist weak cases into curriculum train.jsonl",
+                    "priority": 7,
+                }
+            )
 
-        # 5) Verify after apply
+        actions.append({"type": "save_state", "name": "self_improve", "priority": 1})
         actions.append(
             {
                 "type": "verify",
@@ -196,16 +341,27 @@ class SelfImproveEngine:
             "created_at": datetime.now().isoformat(),
             "diagnosis_severity": diag.get("severity"),
             "avg_pass_rate_before": diag.get("avg_pass_rate"),
+            "topic_counts": diag.get("topic_counts"),
+            "recommendations": diag.get("recommendations"),
             "actions": actions,
             "action_count": len(actions),
+            "options": {"with_mutate": with_mutate, "with_practice": with_practice},
             "safety": {
-                "code_rewrite": False,
-                "scope": "knowledge+curriculum+learning+eval",
-                "note": "Leon does not modify its own source code",
+                "code_rewrite": bool(with_mutate),
+                "scope": "knowledge+curriculum+learning+eval"
+                + ("+train_mutate" if with_mutate else ""),
+                "note": "Source mutation only via SelfMutate allowlist + LEON_ALLOW_MUTATE",
             },
         }
         write_json(self.dir / "last_proposal.json", proposal)
         return proposal
+
+    def _history_boost(self) -> Dict[str, int]:
+        boost: Dict[str, int] = {}
+        for run in self._history[-10:]:
+            if run.get("improved"):
+                boost["teach_volume"] = boost.get("teach_volume", 0) + 1
+        return boost
 
     # ------------------------------------------------------------------ apply
     def apply(self, proposal: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -215,7 +371,10 @@ class SelfImproveEngine:
 
         results: List[Dict[str, Any]] = []
         learned = 0
-        taught = []
+        taught: List[str] = []
+        practiced = 0
+        mutated = None
+        vols_for_verify = prop.get("options", {})
 
         for action in prop.get("actions") or []:
             atype = action.get("type")
@@ -244,13 +403,20 @@ class SelfImproveEngine:
                         source="self_improve:eval_failure",
                         confidence=0.92,
                         volume=action.get("volume_id"),
+                        topic=action.get("topic"),
                     )
-                    # also inject direct fact for ask() path
                     try:
                         from knowledge.registry import get_fact_store
 
-                        get_fact_store().add(
-                            content, source="self_improve", confidence=0.92
+                        get_fact_store().add(content, source="self_improve", confidence=0.92)
+                    except Exception:
+                        pass
+                    # also remember in vector memory if available
+                    try:
+                        from memory import MemoryManager
+
+                        MemoryManager().remember(
+                            content, kind="vector", metadata={"source": "self_improve"}
                         )
                     except Exception:
                         pass
@@ -262,6 +428,62 @@ class SelfImproveEngine:
                             "record": (rec.get("record") or {}).get("id"),
                         }
                     )
+                elif atype == "practice_reason":
+                    from brain.reasoning.engine import ReasoningEngine
+
+                    q = action.get("question") or ""
+                    r = ReasoningEngine(persist_traces=True).reason(q, use_brain=False)
+                    ans = str(r.get("answer") or r.get("conclusion") or "")
+                    exp = str(action.get("expected") or "")
+                    ok = bool(exp) and (exp.lower() in ans.lower() or ans.lower() in exp.lower())
+                    practiced += 1
+                    results.append(
+                        {
+                            "type": atype,
+                            "ok": ok,
+                            "question": q[:80],
+                            "got": ans[:80],
+                            "confidence": r.get("confidence"),
+                        }
+                    )
+                elif atype == "graph_hint":
+                    ok = self._inject_graph_hint(action.get("question") or "", action.get("answer") or "")
+                    results.append({"type": atype, "ok": ok})
+                elif atype == "reflect_trace":
+                    # store low-conf query as pending learning note (not auto-validated)
+                    try:
+                        from learning.engine import LearningEngine
+
+                        LearningEngine().observe(
+                            f"TRACE_WEAK: {action.get('query')} → {action.get('conclusion')}",
+                            source="self_improve:trace",
+                            confidence=0.4,
+                        )
+                        results.append({"type": atype, "ok": True})
+                    except Exception as e:
+                        results.append({"type": atype, "ok": False, "error": str(e)})
+                elif atype == "mutate_train":
+                    try:
+                        from brain.self_mutate import SelfMutateEngine
+
+                        mut = SelfMutateEngine()
+                        batch = mut.propose_from_diagnosis(
+                            read_json(self.dir / "last_diagnose.json", default={})
+                        )
+                        applied_ids = []
+                        if mut.mutation_enabled():
+                            for p in batch.get("proposals") or []:
+                                if p.get("ok") and p.get("proposal_id"):
+                                    ar = mut.apply(p["proposal_id"], run_smoke=False)
+                                    applied_ids.append(ar)
+                        mutated = {
+                            "proposed": len(batch.get("proposals") or []),
+                            "applied": applied_ids,
+                            "enabled": mut.mutation_enabled(),
+                        }
+                        results.append({"type": atype, "ok": True, "detail": mutated})
+                    except Exception as e:
+                        results.append({"type": atype, "ok": False, "error": str(e)})
                 elif atype == "write_failure_dataset":
                     path = self._write_failure_dataset()
                     results.append({"type": atype, "ok": True, "path": str(path)})
@@ -271,33 +493,64 @@ class SelfImproveEngine:
                     save_state(action.get("name") or "self_improve")
                     results.append({"type": atype, "ok": True})
                 elif atype == "verify":
-                    # deferred to explicit verify() at end
                     results.append({"type": atype, "ok": True, "deferred": True})
+                    vols_for_verify = action.get("volumes")
                 else:
                     results.append({"type": atype, "ok": False, "error": "unknown action"})
             except Exception as e:
                 results.append({"type": atype, "ok": False, "error": str(e)})
                 logger.warning(f"SelfImprove apply {atype}: {e}")
 
-        verify = self.verify(volumes=prop.get("actions", [{}])[-1].get("volumes"))
+        verify = self.verify(volumes=vols_for_verify if isinstance(vols_for_verify, list) else None)
+        before = prop.get("avg_pass_rate_before") or 0
+        after = verify.get("avg_pass_rate") or 0
         report = {
             "proposal_id": prop.get("id"),
             "applied_at": datetime.now().isoformat(),
             "results": results,
             "learned_qa": learned,
             "taught_volumes": taught,
+            "practiced": practiced,
+            "mutate": mutated,
             "verify": verify,
-            "improved": bool(
-                verify.get("avg_pass_rate", 0) > (prop.get("avg_pass_rate_before") or 0)
-            )
-            or learned > 0,
+            "improved": bool(after > before) or learned > 0,
+            "delta": round(float(after) - float(before), 3),
         }
         write_json(self.dir / "last_apply.json", report)
         self._history.append(
-            {"id": prop.get("id"), "improved": report["improved"], "at": report["applied_at"]}
+            {
+                "id": prop.get("id"),
+                "improved": report["improved"],
+                "delta": report["delta"],
+                "at": report["applied_at"],
+                "learned": learned,
+            }
         )
         write_json(self.dir / "history.json", {"runs": self._history[-50:]})
         return report
+
+    def _inject_graph_hint(self, question: str, answer: str) -> bool:
+        """Best-effort: 'X hansı kateqoriya' → X is_a Category."""
+        try:
+            from knowledge.registry import get_graph
+
+            g = get_graph()
+        except Exception:
+            return False
+        m = re.search(r"(.+?)\s+hansı\s+kateqor", (question or "").lower())
+        if not m:
+            return False
+        entity = m.group(1).strip()
+        cat = (answer or "").strip().rstrip(".")
+        if not entity or not cat:
+            return False
+        try:
+            eid = g.add_node(entity, node_type="entity")
+            cid = g.add_node(cat, node_type="concept")
+            g.add_edge(eid, cid, "is_a")
+            return True
+        except Exception:
+            return False
 
     def _write_failure_dataset(self) -> Path:
         diag = read_json(self.dir / "last_diagnose.json", default={})
@@ -311,6 +564,7 @@ class SelfImproveEngine:
                         "output": c.get("expected"),
                         "got": c.get("got"),
                         "volume_id": c.get("volume_id"),
+                        "topic": c.get("topic"),
                         "source": "self_improve",
                     },
                     ensure_ascii=False,
@@ -350,22 +604,33 @@ class SelfImproveEngine:
             "timestamp": datetime.now().isoformat(),
         }
 
-    # ------------------------------------------------------------------ cycle
+    # ------------------------------------------------------------------ cycles
     def run_cycle(
         self,
         volumes: Optional[List[str]] = None,
         *,
         apply_changes: bool = True,
+        with_mutate: bool = False,
+        with_practice: bool = True,
     ) -> Dict[str, Any]:
-        """Full self-improve cycle."""
         diag = self.diagnose(volumes=volumes)
-        prop = self.propose(diag)
+        prop = self.propose(diag, with_mutate=with_mutate, with_practice=with_practice)
         if not apply_changes:
             return {
-                "diagnosis": diag,
-                "proposal": prop,
+                "diagnosis": {
+                    "severity": diag.get("severity"),
+                    "avg_pass_rate": diag.get("avg_pass_rate"),
+                    "weak_case_count": len(diag.get("weak_cases") or []),
+                    "topics": diag.get("topic_counts"),
+                    "recommendations": diag.get("recommendations"),
+                },
+                "proposal": {
+                    "id": prop.get("id"),
+                    "action_count": prop.get("action_count"),
+                    "safety": prop.get("safety"),
+                },
                 "applied": False,
-                "note": "dry-run — apply_changes=False",
+                "note": "dry-run",
             }
         applied = self.apply(prop)
         return {
@@ -373,6 +638,7 @@ class SelfImproveEngine:
                 "severity": diag.get("severity"),
                 "avg_pass_rate": diag.get("avg_pass_rate"),
                 "weak_case_count": len(diag.get("weak_cases") or []),
+                "topics": diag.get("topic_counts"),
             },
             "proposal_id": prop.get("id"),
             "action_count": prop.get("action_count"),
@@ -380,12 +646,69 @@ class SelfImproveEngine:
             "safety": prop.get("safety"),
         }
 
+    def auto(
+        self,
+        volumes: Optional[List[str]] = None,
+        *,
+        rounds: int = 3,
+        target: float = 0.95,
+        with_mutate: bool = False,
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """Multi-round improve until target pass rate or max rounds."""
+        rounds = max(1, min(int(rounds), 8))
+        target = max(0.0, min(float(target), 1.0))
+        trail: List[Dict[str, Any]] = []
+        final = None
+
+        for i in range(rounds):
+            if dry_run and i > 0:
+                break
+            cycle = self.run_cycle(
+                volumes=volumes,
+                apply_changes=not dry_run,
+                with_mutate=with_mutate,
+                with_practice=True,
+            )
+            if dry_run:
+                return {"rounds": [cycle], "stopped": "dry_run", "target": target}
+
+            verify = (cycle.get("apply") or {}).get("verify") or {}
+            rate = float(verify.get("avg_pass_rate") or 0)
+            trail.append(
+                {
+                    "round": i + 1,
+                    "pass_rate": rate,
+                    "delta": (cycle.get("apply") or {}).get("delta"),
+                    "learned": (cycle.get("apply") or {}).get("learned_qa"),
+                    "proposal_id": cycle.get("proposal_id"),
+                }
+            )
+            final = cycle
+            if rate >= target:
+                break
+            # no progress stop
+            if i > 0 and trail[-1].get("delta") == 0 and trail[-2].get("delta") == 0:
+                break
+
+        summary = {
+            "target": target,
+            "rounds_run": len(trail),
+            "trail": trail,
+            "final_pass_rate": trail[-1]["pass_rate"] if trail else None,
+            "reached_target": bool(trail and trail[-1]["pass_rate"] >= target),
+            "last_cycle": final,
+        }
+        write_json(self.dir / "last_auto.json", summary)
+        return summary
+
     def status(self) -> Dict[str, Any]:
         return {
             "dir": str(self.dir),
             "last_diagnose": read_json(self.dir / "last_diagnose.json", default=None),
             "last_proposal": read_json(self.dir / "last_proposal.json", default=None),
             "last_apply": read_json(self.dir / "last_apply.json", default=None),
+            "last_auto": read_json(self.dir / "last_auto.json", default=None),
             "history": read_json(self.dir / "history.json", default={}),
         }
 
@@ -394,7 +717,28 @@ self_improve_engine = SelfImproveEngine()
 
 
 def improve(
-    volumes: Optional[List[str]] = None, *, dry_run: bool = False
+    volumes: Optional[List[str]] = None,
+    *,
+    dry_run: bool = False,
+    with_mutate: bool = False,
 ) -> Dict[str, Any]:
-    """Public entry: Leon improves itself (knowledge/eval loop)."""
-    return SelfImproveEngine().run_cycle(volumes=volumes, apply_changes=not dry_run)
+    return SelfImproveEngine().run_cycle(
+        volumes=volumes, apply_changes=not dry_run, with_mutate=with_mutate
+    )
+
+
+def improve_auto(
+    volumes: Optional[List[str]] = None,
+    *,
+    rounds: int = 3,
+    target: float = 0.95,
+    with_mutate: bool = False,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    return SelfImproveEngine().auto(
+        volumes=volumes,
+        rounds=rounds,
+        target=target,
+        with_mutate=with_mutate,
+        dry_run=dry_run,
+    )
