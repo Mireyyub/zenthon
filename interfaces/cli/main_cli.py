@@ -1,4 +1,4 @@
-"""Leon CLI – cognitive + omniverse + image + self-improve."""
+"""Leon CLI – cognitive + omniverse + image + improve + mutate."""
 
 import argparse
 import sys
@@ -127,13 +127,30 @@ def parse_args():
     imp = sub.add_parser("improve", help="Self-improvement cycle")
     imp_sub = imp.add_subparsers(dest="imp_cmd")
     idg = imp_sub.add_parser("diagnose")
-    idg.add_argument("--volumes", default="01,02", help="comma-separated volume ids")
+    idg.add_argument("--volumes", default="01,02")
     idg.add_argument("--json", action="store_true")
     irun = imp_sub.add_parser("run")
     irun.add_argument("--volumes", default="01,02")
     irun.add_argument("--dry-run", action="store_true")
     irun.add_argument("--json", action="store_true")
     imp_sub.add_parser("status")
+
+    mut = sub.add_parser("mutate", help="Controlled source self-mutation")
+    mut_sub = mut.add_subparsers(dest="mut_cmd")
+    mut_sub.add_parser("status")
+    mp = mut_sub.add_parser("propose")
+    mp.add_argument("--path", default=None)
+    mp.add_argument("--mode", default="replace", choices=["replace", "append", "write"])
+    mp.add_argument("--old", default=None)
+    mp.add_argument("--new", default=None)
+    mp.add_argument("--content", default=None)
+    mp.add_argument("--reason", default="")
+    mp.add_argument("--goal", default=None, help="Heuristic proposal from goal")
+    ma = mut_sub.add_parser("apply")
+    ma.add_argument("proposal_id", nargs="?", default=None)
+    ma.add_argument("--no-smoke", action="store_true")
+    mr = mut_sub.add_parser("rollback")
+    mr.add_argument("mutation_id")
 
     teach_p = sub.add_parser("teach")
     teach_p.add_argument("lesson_id", nargs="?", default="000001")
@@ -445,6 +462,11 @@ class CLIController:
             return
         print("improve diagnose|run|status")
 
+    def cmd_mutate(self, args):
+        from interfaces.cli.mutate_cli import run_mutate
+
+        run_mutate(args)
+
     def cmd_teach(self, args):
         from curriculum import CurriculumEngine
         from core.bootstrap import save_state
@@ -523,6 +545,9 @@ def main():
             return
         if cmd == "improve":
             ctrl.cmd_improve(args)
+            return
+        if cmd == "mutate":
+            ctrl.cmd_mutate(args)
             return
         mapping = {
             "start": lambda: ctrl.cmd_start(args),
