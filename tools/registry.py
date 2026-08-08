@@ -1,4 +1,4 @@
-"""Tool Registry – allowlist-aware (Faza 9)."""
+"""Tool Registry – allowlist-aware."""
 
 from __future__ import annotations
 
@@ -56,18 +56,11 @@ class ToolRegistry:
 
                 gate_tool(name, user="agent", arg=arg)
             except Exception as e:
-                # re-raise security errors; soft-skip if security not loaded
                 from core.exceptions import SecurityError
 
-                if isinstance(e, SecurityError):
-                    raise
-                if e.__class__.__name__ == "SecurityError":
-                    raise
-                # ImportError etc – continue without gate in early boot
-                if "SecurityError" in type(e).__name__:
+                if isinstance(e, SecurityError) or "SecurityError" in type(e).__name__:
                     raise
                 if not isinstance(e, (ImportError, ModuleNotFoundError)):
-                    # permission / allowlist raised
                     raise
         tool = self._tools.get(name)
         if not tool:
@@ -76,13 +69,16 @@ class ToolRegistry:
         if not params:
             return tool.func()
         key = params[0]
-        if key in ("text", "expression", "code", "content"):
+        if key in ("text", "expression", "code", "content", "prompt"):
             return tool.func(**{key: arg})
         if key == "path":
             return tool.func(path=arg or ".")
         if name == "write_file" and "||" in arg:
             path, content = arg.split("||", 1)
             return tool.func(path=path.strip(), content=content)
+        if name == "image_process" and "||" in arg:
+            path, op = arg.split("||", 1)
+            return tool.func(path=path.strip(), op=op.strip())
         if name == "write_file":
             return tool.func(path=arg, content="")
         return tool.func(**{key: arg})
@@ -133,6 +129,37 @@ def _register_builtins():
         tool_registry.register("run_python", run_python, "Məhdud Python sandbox", {"code": "str"})
     except Exception as e:
         logger.warning(f"safe_fs tools not loaded: {e}")
+
+    # Image tools (Pillow / Ollama soft)
+    try:
+        from multimodal.image_ops import image_info, process_image
+        from multimodal.generate import generate_image
+        from multimodal.vision import describe_image
+
+        def _img_info(path: str = "") -> Any:
+            return image_info(path)
+
+        def _img_process(path: str = "", op: str = "thumbnail") -> Any:
+            return process_image(path, op=op or "thumbnail")
+
+        def _img_gen(prompt: str = "leon") -> Any:
+            return generate_image(prompt=prompt or "leon", style="gradient")
+
+        def _img_desc(path: str = "") -> Any:
+            return describe_image(path)
+
+        tool_registry.register("image_info", _img_info, "Şəkil meta", {"path": "str"})
+        tool_registry.register(
+            "image_process", _img_process, "path||op (thumbnail|grayscale|...)", {"path": "str", "op": "str"}
+        )
+        tool_registry.register(
+            "image_generate", _img_gen, "Procedural şəkil generasiya", {"prompt": "str"}, production=False
+        )
+        tool_registry.register(
+            "image_describe", _img_desc, "Ollama VLM təsvir", {"path": "str"}, production=False
+        )
+    except Exception as e:
+        logger.debug(f"image tools not loaded: {e}")
 
 
 _register_builtins()

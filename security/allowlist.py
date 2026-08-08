@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Dict, FrozenSet, Set
+from typing import FrozenSet, Set
 
-# Production-safe tools only by default
 DEFAULT_ALLOWED: FrozenSet[str] = frozenset(
     {
         "echo",
@@ -14,10 +13,13 @@ DEFAULT_ALLOWED: FrozenSet[str] = frozenset(
         "write_file",
         "calc",
         "run_python",
+        "image_info",
+        "image_process",
+        "image_generate",
+        "image_describe",
     }
 )
 
-# Always denied even if someone tries to register
 DENIED: FrozenSet[str] = frozenset(
     {
         "shell",
