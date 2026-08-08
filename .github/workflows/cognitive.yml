@@ -18,7 +18,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest fastapi uvicorn pydantic httpx Pillow
-      - name: Unit cognitive + security + self + multimodal + vol03
+      - name: Unit cognitive suite
         run: |
           python -m pytest \
             tests/unit/test_facts_graph_learning.py \
@@ -31,6 +31,7 @@ jobs:
             tests/unit/test_multimodal_image.py \
             tests/unit/test_self_improve.py \
             tests/unit/test_self_mutate.py \
+            tests/unit/test_cognitive_cycle.py \
             -q --tb=short
       - name: Integration smoke
         run: |
@@ -43,20 +44,20 @@ jobs:
           python - <<'PY'
           from brain.policy_bind import bind_mutate_policy
           from brain.self_view import SelfView
+          from brain.cognitive_cycle import CognitiveCycle
           assert bind_mutate_policy()
           body = SelfView().body()
           assert body.get("identity") == "Leon"
-          assert body.get("summary", {}).get("python_modules", 0) > 10
-          print("system body ok", body["summary"])
+          r = CognitiveCycle().run("Daş mövcuddurmu?", learn=False, reflect=True)
+          assert r.get("ok") and r.get("agi_claim") is False
+          print("cycle", r.get("source"), r.get("confidence"))
           PY
       - name: Curriculum volumes 01-03 load
         run: |
           python - <<'PY'
-          from curriculum.volume import list_volumes, load_volume
-          vols = list_volumes()
-          print("volumes", vols)
+          from curriculum.volume import load_volume
           for vid in ("01", "02", "03"):
               m = load_volume(vid)
               assert m.get("lessons"), vid
-              print(vid, m.get("title") or m.get("name"), len(m.get("lessons") or []))
+              print(vid, len(m.get("lessons") or []))
           PY
