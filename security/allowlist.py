@@ -1,4 +1,4 @@
-"""Tool allowlist (Faza 9)."""
+"""Tool allowlist (Faza 9 + multimodal)."""
 
 from __future__ import annotations
 
@@ -17,6 +17,13 @@ DEFAULT_ALLOWED: FrozenSet[str] = frozenset(
         "image_process",
         "image_generate",
         "image_describe",
+        "image_understand",
+        "audio_status",
+        "audio_info",
+        "speech_to_text",
+        "text_to_speech",
+        "tone_wav",
+        "crew_run",
     }
 )
 

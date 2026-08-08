@@ -1,6 +1,7 @@
 """
-Sandbox filesystem tools (Faza 5).
+Sandbox filesystem tools.
 Yalnız data/leon/sandbox və data/leon altında oxu/yaz.
+run_python: restricted exec + optional subprocess isolation.
 """
 
 from __future__ import annotations
@@ -62,7 +63,6 @@ def read_file(path: str, max_bytes: int = 50_000) -> Dict[str, Any]:
 
 def write_file(path: str, content: str = "") -> Dict[str, Any]:
     p = _resolve_safe(path)
-    # yaz yalnız sandbox root-da
     sandbox = _roots()[0]
     try:
         p.relative_to(sandbox)
@@ -73,7 +73,6 @@ def write_file(path: str, content: str = "") -> Dict[str, Any]:
     return {"path": str(p), "written": len(content or "")}
 
 
-# Safe arithmetic eval for calc tool
 _ALLOWED_OPS = {
     ast.Add: op.add,
     ast.Sub: op.sub,
@@ -108,9 +107,16 @@ def calc(expression: str = "") -> Dict[str, Any]:
 
 def run_python(code: str = "", timeout: float = 2.0) -> Dict[str, Any]:
     """
-    Çox məhdud sandbox: AST whitelist + exec restricted builtins.
-    Fayl/sistem çağırışı yoxdur.
+    Prefer security.Sandbox subprocess isolation; fall back to restricted exec.
     """
+    try:
+        from security.sandbox import Sandbox
+
+        return Sandbox(timeout_seconds=max(1, int(timeout))).run_python(code)
+    except Exception as e:
+        # fall back if import/signal issues
+        pass
+
     forbidden = (
         "import", "open", "exec", "eval", "__", "os.", "sys.", "subprocess",
         "socket", "pathlib", "shutil", "compile",
@@ -137,11 +143,9 @@ def run_python(code: str = "", timeout: float = 2.0) -> Dict[str, Any]:
     }
     local: Dict[str, Any] = {}
     try:
-        # compile check
         compile(code, "<sandbox>", "exec")
-        exec(code, {"__builtins__": safe_builtins}, local)  # noqa: S102 – intentional sandbox
-        # return non-dunder locals
+        exec(code, {"__builtins__": safe_builtins}, local)  # noqa: S102
         out = {k: repr(v)[:200] for k, v in local.items() if not k.startswith("_")}
-        return {"ok": True, "locals": out}
+        return {"ok": True, "locals": out, "mode": "restricted_exec"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
