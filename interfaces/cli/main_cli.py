@@ -55,11 +55,31 @@ def parse_args():
     cyc.add_argument("query")
     cyc.add_argument("--goal", default=None)
     cyc.add_argument("--image", default=None)
+    cyc.add_argument("--audio", default=None)
     cyc.add_argument("--agent", default=None)
     cyc.add_argument("--experimental", action="store_true")
     cyc.add_argument("--no-learn", action="store_true")
     cyc.add_argument("--no-reflect", action="store_true")
     cyc.add_argument("--json", action="store_true")
+
+    crew = sub.add_parser("crew", help="Multi-agent crew")
+    crew.add_argument("goal", nargs="?", default="analyze")
+    crew.add_argument("--mode", default="sequential", choices=["sequential", "parallel", "debate"])
+    crew.add_argument("--agents", default="react,coding")
+    crew.add_argument("--research", action="store_true")
+    crew.add_argument("--image", default=None)
+
+    audio = sub.add_parser("audio", help="Speech / audio")
+    audio_sub = audio.add_subparsers(dest="audio_cmd")
+    audio_sub.add_parser("status")
+    ai = audio_sub.add_parser("info")
+    ai.add_argument("path")
+    astt = audio_sub.add_parser("stt")
+    astt.add_argument("path")
+    atts = audio_sub.add_parser("tts")
+    atts.add_argument("text")
+    atts.add_argument("--out", default=None)
+    audio_sub.add_parser("tone")
 
     eext = sub.add_parser("eval-ext", help="Transfer / human / long-horizon")
     eext_sub = eext.add_subparsers(dest="ev_cmd")
@@ -203,8 +223,9 @@ def main():
             result = reasoning_engine.reason(
                 args.query, strategy=args.strategy, goal=args.goal, use_brain=not args.no_brain
             )
-            print(json.dumps(result, ensure_ascii=False, indent=2, default=str) if args.json else None)
-            if not args.json:
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+            else:
                 _print_reason(result)
             return
         if cmd == "think":
@@ -217,14 +238,25 @@ def main():
                 agent_type=args.agent,
                 allow_experimental_agent=args.experimental,
             )
-            print(json.dumps(result, ensure_ascii=False, indent=2, default=str) if args.json else None)
-            if not args.json:
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+            else:
                 _print_reason(result)
             return
         if cmd == "cycle":
             from interfaces.cli.cycle_cli import run_cycle
 
             run_cycle(args)
+            return
+        if cmd == "crew":
+            from interfaces.cli.crew_cli import run_crew_cmd
+
+            run_crew_cmd(args)
+            return
+        if cmd == "audio":
+            from interfaces.cli.crew_cli import run_audio_cmd
+
+            run_audio_cmd(args)
             return
         if cmd == "eval-ext":
             from interfaces.cli.eval_ext_cli import run_eval_ext
@@ -271,11 +303,6 @@ def main():
                 print("improve diagnose|run|auto|status")
             return
         if cmd == "mutate":
-            print("Use: python -m interfaces.cli.mutate_cli  (or restore full mutate subcommands from history)")
-            print("Hint: interfaces.cli.mutate_cli.run_mutate")
-            from interfaces.cli import mutate_cli as mc
-
-            # minimal: status via engine
             from brain.self_mutate import SelfMutateEngine
 
             print(json.dumps(SelfMutateEngine().status(), ensure_ascii=False, indent=2, default=str))
@@ -291,7 +318,7 @@ def main():
             print(json.dumps(SystemLoop().status(), ensure_ascii=False, indent=2, default=str))
             return
         if cmd == "plan":
-            from brain.planning import Planner, long_horizon_plan
+            from brain.planning import long_horizon_plan
 
             plan = long_horizon_plan()
             print(json.dumps({"plan_id": plan.id, "goal": plan.goal, "tasks": len(plan.tasks)}, ensure_ascii=False, indent=2))
@@ -302,9 +329,9 @@ def main():
             print(json.dumps(retrieve("obyekt", top_k=5), ensure_ascii=False, indent=2, default=str))
             return
         if cmd in ("image", "omniverse", "agent", "quarantine"):
-            print(f"{cmd}: detailed subcommands available in module interfaces; use dedicated helpers or prior full CLI revision")
+            print(f"{cmd}: detailed subcommands in dedicated modules")
             return
-        print("Leon CLI – try: start|reason|think|cycle|eval|eval-ext|teach-volume|improve|system")
+        print("Leon CLI – start|reason|think|cycle|crew|audio|eval|eval-ext|teach-volume|improve|system")
         sys.exit(1)
     except Exception as e:
         logger.error(f"Error: {e}")
