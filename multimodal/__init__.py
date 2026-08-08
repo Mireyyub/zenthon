@@ -1,11 +1,20 @@
-"""
-Leon multimodal – image processing, understanding, procedural generation.
-"""
+"""Multimodal: vision, image ops, generate, understand, audio/speech."""
 
 from multimodal.image_ops import image_info, process_image, list_supported
 from multimodal.vision import describe_image, vision_available
-from multimodal.generate import generate_image, generate_card
-from multimodal.understand import understand_image, local_analyze
+from multimodal.generate import generate_image
+from multimodal.understand import understand_image
+
+try:
+    from multimodal.audio import (
+        audio_info,
+        audio_available,
+        understand_speech,
+        generate_speech,
+        make_tone_wav,
+    )
+except Exception:  # pragma: no cover
+    audio_info = audio_available = understand_speech = generate_speech = make_tone_wav = None  # type: ignore
 
 __all__ = [
     "image_info",
@@ -14,7 +23,10 @@ __all__ = [
     "describe_image",
     "vision_available",
     "generate_image",
-    "generate_card",
     "understand_image",
-    "local_analyze",
+    "audio_info",
+    "audio_available",
+    "understand_speech",
+    "generate_speech",
+    "make_tone_wav",
 ]

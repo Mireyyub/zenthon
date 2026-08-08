@@ -1,4 +1,4 @@
-"""Tool Registry – allowlist-aware."""
+"""Tool Registry – allowlist-aware (+ audio + understand)."""
 
 from __future__ import annotations
 
@@ -130,11 +130,11 @@ def _register_builtins():
     except Exception as e:
         logger.warning(f"safe_fs tools not loaded: {e}")
 
-    # Image tools (Pillow / Ollama soft)
     try:
         from multimodal.image_ops import image_info, process_image
         from multimodal.generate import generate_image
         from multimodal.vision import describe_image
+        from multimodal.understand import understand_image
 
         def _img_info(path: str = "") -> Any:
             return image_info(path)
@@ -148,6 +148,9 @@ def _register_builtins():
         def _img_desc(path: str = "") -> Any:
             return describe_image(path)
 
+        def _img_understand(path: str = "") -> Any:
+            return understand_image(path, use_vlm=True, inject_facts=False)
+
         tool_registry.register("image_info", _img_info, "Şəkil meta", {"path": "str"})
         tool_registry.register(
             "image_process", _img_process, "path||op (thumbnail|grayscale|...)", {"path": "str", "op": "str"}
@@ -158,8 +161,53 @@ def _register_builtins():
         tool_registry.register(
             "image_describe", _img_desc, "Ollama VLM təsvir", {"path": "str"}, production=False
         )
+        tool_registry.register(
+            "image_understand", _img_understand, "Local+VLM anlama", {"path": "str"}, production=False
+        )
     except Exception as e:
         logger.debug(f"image tools not loaded: {e}")
+
+    try:
+        from multimodal.audio import (
+            audio_info,
+            audio_available,
+            understand_speech,
+            generate_speech,
+            make_tone_wav,
+        )
+
+        tool_registry.register("audio_status", lambda: audio_available(), "Audio backend status")
+        tool_registry.register("audio_info", audio_info, "WAV/audio meta", {"path": "str"})
+        tool_registry.register(
+            "speech_to_text", understand_speech, "STT (whisper if installed)", {"path": "str"}, production=False
+        )
+        tool_registry.register(
+            "text_to_speech", generate_speech, "TTS (espeak/pyttsx3 if installed)", {"text": "str"}, production=False
+        )
+        tool_registry.register(
+            "tone_wav", lambda: make_tone_wav(), "Test sine WAV", production=False
+        )
+    except Exception as e:
+        logger.debug(f"audio tools not loaded: {e}")
+
+    try:
+        from agents.crew import run_crew
+
+        def _crew(prompt: str = "") -> Any:
+            return run_crew(
+                prompt or "analyze",
+                [
+                    {"description": prompt or "analyze", "agent": "react"},
+                    {"description": "Summarize prior", "agent": "coding"},
+                ],
+                mode="sequential",
+            )
+
+        tool_registry.register(
+            "crew_run", _crew, "Mini multi-agent crew", {"prompt": "str"}, production=False
+        )
+    except Exception as e:
+        logger.debug(f"crew tool not loaded: {e}")
 
 
 _register_builtins()

@@ -1,10 +1,14 @@
-"""Path + execution sandbox (Faza 9)."""
+"""Path + execution sandbox (hardened)."""
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Callable, List, Optional, Sequence
+import os
 import signal
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from core.exceptions import SecurityError
 from core.logger import logger
@@ -38,7 +42,6 @@ class PathSandbox:
             try:
                 p.relative_to(root)
                 ok = True
-                # write yalnız sandbox root (birinci)
                 if write:
                     p.relative_to(self.roots[0])
                 break
@@ -49,8 +52,23 @@ class PathSandbox:
         return p
 
 
+FORBIDDEN_SNIPPETS = (
+    "os.system",
+    "subprocess",
+    "__import__",
+    "eval(",
+    "exec(",
+    "open(",
+    "socket",
+    "ctypes",
+    "pickle",
+    "shutil.rmtree",
+    "Path(",
+)
+
+
 class Sandbox:
-    """Timeout + path sandbox."""
+    """Timeout + path sandbox + isolated python exec."""
 
     def __init__(self, timeout_seconds: int = 10):
         self.timeout = timeout_seconds
@@ -74,6 +92,59 @@ class Sandbox:
         except AttributeError:
             logger.debug("Sandbox: SIGALRM not available")
             return func(*args, **kwargs)
+
+    def check_code(self, code: str) -> None:
+        low = code or ""
+        for snip in FORBIDDEN_SNIPPETS:
+            if snip in low:
+                raise SecurityError(f"Forbidden snippet in sandbox code: {snip}")
+        if len(low) > 8000:
+            raise SecurityError("Code too long for sandbox")
+
+    def run_python(
+        self,
+        code: str,
+        *,
+        timeout: Optional[int] = None,
+        extra_env: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Run Python in a subprocess with cwd=sandbox root."""
+        self.check_code(code)
+        root = self.paths.roots[0]
+        root.mkdir(parents=True, exist_ok=True)
+        t = timeout if timeout is not None else self.timeout
+        env = os.environ.copy()
+        env["PYTHONPATH"] = ""
+        env["LEON_SANDBOX"] = "1"
+        if extra_env:
+            env.update(extra_env)
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", dir=str(root), delete=False, encoding="utf-8"
+        ) as f:
+            f.write(code)
+            script = f.name
+        try:
+            proc = subprocess.run(
+                [sys.executable, script],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                timeout=t,
+                env=env,
+            )
+            return {
+                "ok": proc.returncode == 0,
+                "returncode": proc.returncode,
+                "stdout": (proc.stdout or "")[:4000],
+                "stderr": (proc.stderr or "")[:2000],
+            }
+        except subprocess.TimeoutExpired:
+            raise SecurityError(f"Sandbox python timeout ({t}s)")
+        finally:
+            try:
+                Path(script).unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 sandbox = Sandbox()

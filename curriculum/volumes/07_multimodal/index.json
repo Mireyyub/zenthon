@@ -1,0 +1,8 @@
+{
+  "volume": "07",
+  "title": "Multimodal Perception",
+  "version": "1.0.0",
+  "lessons": ["000021", "000022", "000023", "000024"],
+  "target_concepts": ["Şəkil", "Səs", "Danışıq", "Generasiya", "Anlama"],
+  "depends_on": ["01", "05"]
+}

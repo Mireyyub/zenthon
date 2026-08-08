@@ -1,0 +1,8 @@
+{"id":"mm01","instruction":"Şəkil vizual obyektdirmi?","output":"Bəli.","lesson":"000021","tags":["image"]}
+{"id":"mm02","instruction":"Rəng şəkil xüsusiyyəti ola bilərmi?","output":"Bəli.","lesson":"000021","tags":["image"]}
+{"id":"mm03","instruction":"Səs zamanla dəyişən siqnaldırmı?","output":"Bəli.","lesson":"000022","tags":["sound"]}
+{"id":"mm04","instruction":"Tezlik səs xüsusiyyətidirmi?","output":"Bəli.","lesson":"000022","tags":["sound"]}
+{"id":"mm05","instruction":"Danışıq dil daşıya bilərmi?","output":"Bəli.","lesson":"000023","tags":["speech"]}
+{"id":"mm06","instruction":"STT danışığı mətnə çevirirmi?","output":"Bəli.","lesson":"000023","tags":["speech"]}
+{"id":"mm07","instruction":"Generasiya sintez ola bilərmi?","output":"Bəli.","lesson":"000024","tags":["generate"]}
+{"id":"mm08","instruction":"Generasiya həmişə real müşahidədirmi?","output":"Xeyr.","lesson":"000024","tags":["generate"]}
