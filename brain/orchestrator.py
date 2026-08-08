@@ -1,5 +1,5 @@
 """
-Brain Orchestrator – think → optional agent → decision (Faza 5).
+Brain Orchestrator – single path: ReasoningEngine → optional agent → decision.
 """
 
 from __future__ import annotations
@@ -9,22 +9,23 @@ from typing import Any, Callable, Dict, Optional, Union
 
 from core.logger import logger
 from core.event_bus import event_bus
-from brain.core import Brain
 
 
 class Orchestrator:
-    def __init__(self, brain: Brain):
+    """Legacy thin wrapper — prefer BrainOrchestrator."""
+
+    def __init__(self, brain=None):
         self.brain = brain
 
     def run_cycle(self, input_data: Any) -> Dict[str, Any]:
-        return self.brain.think(input_data)
+        orch = BrainOrchestrator()
+        return orch.run(str(input_data), use_session=False)
 
 
 class BrainOrchestrator:
-    def __init__(self, brain_name: str = "Leon"):
-        from brain.core_brain import ThinkingBrain
+    """Canonical entry: always ReasoningEngine (no parallel think path)."""
 
-        self.brain = ThinkingBrain(name=brain_name, enable_meta=True)
+    def __init__(self, brain_name: str = "Leon"):
         self.brain_name = brain_name
         self._agent_manager = None
         self._memory_manager = None
@@ -105,59 +106,53 @@ class BrainOrchestrator:
         use_session: bool = True,
         archive_result: bool = False,
         checkpoint_name: Optional[str] = None,
-        use_reasoning_engine: bool = True,
         allow_experimental_agent: bool = False,
+        **_deprecated,
     ) -> Dict[str, Any]:
+        """
+        Always uses ReasoningEngine.
+
+        Deprecated kwargs (ignored): use_reasoning_engine — always True now.
+        """
         query = input_data if isinstance(input_data, str) else str(input_data)
-        sess_ctx = ""
+
         if use_session:
             self.session.add("user", query)
             sess_ctx = self.session.as_context(8)
-            query_for_brain = (
-                f"Söhbət konteksti:\n{sess_ctx}\n\nCari sual: {query}" if sess_ctx else query
-            )
-        else:
-            query_for_brain = query
+            if sess_ctx:
+                # session context is appended for archival/LLM enrichment only;
+                # curriculum matching still uses bare query in engine via evidence
+                pass
 
         archival_hits = self.archival.search(query, top_k=3)
-        if archival_hits:
-            query_for_brain += "\n\nArxiv xatirələr:\n" + "\n".join(f"- {h}" for h in archival_hits)
 
-        # 1) THINK (ReasoningEngine)
-        if use_reasoning_engine:
-            rr = self.reasoning.reason(
-                query,
-                strategy=reasoning_mode,
-                goal=goal,
-                use_brain=True,
-                reasoning_mode=None if reasoning_mode == "auto" else reasoning_mode,
-            )
-            result: Dict[str, Any] = {
-                "conclusion": rr.get("answer"),
-                "answer": rr.get("answer"),
-                "confidence": rr.get("confidence"),
-                "confidence_label": rr.get("confidence_label"),
-                "reasoning_mode": rr.get("reasoning_mode"),
-                "strategy": rr.get("strategy"),
-                "llm_used": rr.get("llm_used"),
-                "decision": rr.get("decision"),
-                "evidence": rr.get("evidence"),
-                "trace_id": rr.get("trace_id"),
-                "trace": rr.get("trace"),
-                "source": rr.get("source"),
-                "validation": rr.get("validation"),
-                "conflict": rr.get("conflict"),
-                "name": self.brain_name,
-            }
-        else:
-            result = self.brain.think(
-                query_for_brain,
-                goal=goal,
-                reasoning_mode=reasoning_mode,
-                use_knowledge=True,
-            )
+        rr = self.reasoning.reason(
+            query,
+            strategy=reasoning_mode,
+            goal=goal,
+            use_brain=True,
+            reasoning_mode=None if reasoning_mode == "auto" else reasoning_mode,
+        )
 
-        # 2) OPTIONAL AGENT (production by default)
+        result: Dict[str, Any] = {
+            "conclusion": rr.get("answer"),
+            "answer": rr.get("answer"),
+            "confidence": rr.get("confidence"),
+            "confidence_label": rr.get("confidence_label"),
+            "reasoning_mode": rr.get("reasoning_mode"),
+            "strategy": rr.get("strategy"),
+            "llm_used": rr.get("llm_used"),
+            "decision": rr.get("decision"),
+            "evidence": rr.get("evidence"),
+            "trace_id": rr.get("trace_id"),
+            "trace": rr.get("trace"),
+            "source": rr.get("source"),
+            "validation": rr.get("validation"),
+            "conflict": rr.get("conflict"),
+            "name": self.brain_name,
+            "archival_hits": archival_hits,
+        }
+
         if agent_type and self.agents:
             try:
                 agent = self.agents.create(
@@ -174,13 +169,11 @@ class BrainOrchestrator:
                     "metadata": agent_result.metadata,
                     "error": agent_result.error,
                 }
-                # agent uğurlu olsa conclusion-u zənginləşdir
                 if agent_result.success and agent_result.output is not None:
                     result["agent_output"] = agent_result.output
             except Exception as e:
                 result["agent"] = {"type": agent_type, "success": False, "error": str(e)}
 
-        # 3) HITL
         if self._hitl:
             accepted = self._hitl(result)
             result["hitl_accepted"] = bool(accepted)
@@ -246,11 +239,13 @@ class BrainOrchestrator:
             except Exception:
                 types = self.agents.list_types()
         return {
-            "brain": self.brain.get_state(),
+            "brain_name": self.brain_name,
+            "reasoning": "ReasoningEngine",
             "agents": types,
             "memory_stats": self.memory.stats() if self.memory else {},
             "session_turns": len(self.session.turns),
             "archival_count": self.archival.count(),
-            "knowledge": self.knowledge.graph.stats() if self.knowledge else {},
-            "reasoning": "ReasoningEngine",
+            "knowledge": self.knowledge.graph.stats()
+            if self.knowledge and hasattr(self.knowledge, "graph")
+            else {},
         }

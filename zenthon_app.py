@@ -1,5 +1,5 @@
 """
-Leon AI Platform – unified entrypoint (Faza 0).
+Leon AI Platform – unified entrypoint.
 
     python zenthon_app.py
     python zenthon_app.py --bootstrap
@@ -17,7 +17,7 @@ import sys
 def main(argv: list | None = None) -> int:
     parser = argparse.ArgumentParser(description="Leon AI Platform")
     parser.add_argument("--bootstrap", action="store_true", help="Curriculum + genome bootstrap")
-    parser.add_argument("--smoke", action="store_true", help="Faza 0 smoke test")
+    parser.add_argument("--smoke", action="store_true", help="Smoke test")
     parser.add_argument("--status", action="store_true", help="Status JSON")
     parser.add_argument("--volume", default="01", help="Curriculum volume for bootstrap")
     parser.add_argument("--no-llm-check", action="store_true", help="Skip Ollama/LLM probe")
@@ -67,26 +67,24 @@ def main(argv: list | None = None) -> int:
             print(f"  {k}: {v}")
 
     llm = report.get("llm") or {}
-    print(f"\n[LLM] provider={llm.get('provider')} reachable={llm.get('reachable')} model={llm.get('model')}")
+    print(
+        f"\n[LLM] provider={llm.get('provider')} reachable={llm.get('reachable')} model={llm.get('model')}"
+    )
 
     if report.get("curriculum"):
         print(f"\n[Curriculum] {report['curriculum']}")
 
-    # Short think demo when not smoke
+    # Canonical think path: Orchestrator → ReasoningEngine
     try:
-        brain = None
-        from core.service_registry import service_registry
+        from brain.orchestrator import BrainOrchestrator
 
-        try:
-            brain = service_registry.get("brain")
-        except Exception:
-            from brain import ThinkingBrain
-
-            brain = ThinkingBrain(name=config.ai_name)
-        result = brain.think("Leon kimdir?", reasoning_mode="auto")
-        print("\n--- Think ---")
+        orch = BrainOrchestrator(brain_name=config.ai_name)
+        result = orch.run("Leon kimdir?", reasoning_mode="auto", use_session=False)
+        print("\n--- Think (ReasoningEngine) ---")
+        print(f"Source     : {result.get('source')}")
         print(f"Mode       : {result.get('reasoning_mode')}")
         print(f"Confidence : {result.get('confidence')}")
+        print(f"Trace      : {result.get('trace_id')}")
         print(f"LLM used   : {result.get('llm_used')}")
         print(f"Conclusion : {str(result.get('conclusion') or '')[:240]}")
     except Exception as e:

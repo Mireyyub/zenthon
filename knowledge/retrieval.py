@@ -1,25 +1,23 @@
-"""Knowledge Retrieval – GraphRAG hybrid (Faza 4)."""
+"""Knowledge Retrieval – registry-backed GraphRAG hybrid."""
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from knowledge.graph import KnowledgeGraph
-from knowledge.facts import FactStore
-
 
 class KnowledgeRetrieval:
-    def __init__(
-        self,
-        graph: Optional[KnowledgeGraph] = None,
-        facts: Optional[FactStore] = None,
-    ):
-        self.graph = graph or KnowledgeGraph()
-        self.facts = facts or FactStore()
+    def __init__(self, graph=None, facts=None):
+        if graph is None or facts is None:
+            from knowledge.registry import get_fact_store, get_graph
+
+            self.graph = graph or get_graph()
+            self.facts = facts or get_fact_store()
+        else:
+            self.graph = graph
+            self.facts = facts
 
     def retrieve(self, query: str, top_k: int = 5) -> Dict[str, Any]:
-        """Legacy shape + unified pipeline."""
-        base = {
+        base: Dict[str, Any] = {
             "facts": self.facts.search(query, top_k=top_k),
             "nodes": self.graph.find_by_label(query),
             "query": query,
