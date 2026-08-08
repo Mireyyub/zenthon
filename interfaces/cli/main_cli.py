@@ -152,7 +152,21 @@ def parse_args():
     mp.add_argument("--reason", default="")
     mp.add_argument("--goal", default=None)
     mp.add_argument("--candidates", type=int, default=3)
-    mp.add_argument("--strategy", default=None, help="train_enrich|docstring_boost|...")
+    mp.add_argument("--strategy", default=None)
+    mw = mut_sub.add_parser("write", help="Leon writes own code")
+    mw.add_argument("--goal", required=True)
+    mw.add_argument("--path", default=None)
+    mw.add_argument("--create", action="store_true", default=True)
+    mw.add_argument("--no-create", action="store_true")
+    mw.add_argument("--apply", action="store_true")
+    mw.add_argument("--no-llm", action="store_true")
+    mcg = mut_sub.add_parser("codegen", help="Alias of write")
+    mcg.add_argument("--goal", required=True)
+    mcg.add_argument("--path", default=None)
+    mcg.add_argument("--create", action="store_true", default=True)
+    mcg.add_argument("--no-create", action="store_true")
+    mcg.add_argument("--apply", action="store_true")
+    mcg.add_argument("--no-llm", action="store_true")
     ms = mut_sub.add_parser("smart")
     ms.add_argument("--goal", default=None)
     ms.add_argument("--apply", action="store_true")
@@ -499,6 +513,10 @@ class CLIController:
         print("improve diagnose|run|auto|status")
 
     def cmd_mutate(self, args):
+        # normalize --no-create
+        if getattr(args, "mut_cmd", None) in ("write", "codegen"):
+            if getattr(args, "no_create", False):
+                args.create = False
         from interfaces.cli.mutate_cli import run_mutate
 
         run_mutate(args)
