@@ -1,4 +1,4 @@
-"""Leon CLI – cognitive + omniverse + image + improve + mutate."""
+"""Leon CLI – cognitive + omniverse + image + improve + mutate + system."""
 
 import argparse
 import sys
@@ -189,6 +189,18 @@ def parse_args():
     ma.add_argument("--no-smoke", action="store_true")
     mr = mut_sub.add_parser("rollback")
     mr.add_argument("mutation_id")
+
+    sysp = sub.add_parser("system", help="Whole-system status / improve / smoke")
+    sys_sub = sysp.add_subparsers(dest="sys_cmd")
+    sys_sub.add_parser("status")
+    sys_sub.add_parser("smoke")
+    sim = sys_sub.add_parser("improve")
+    sim.add_argument("--volumes", default="01,02")
+    sim.add_argument("--rounds", type=int, default=2)
+    sim.add_argument("--target", type=float, default=0.95)
+    sim.add_argument("--with-mutate", action="store_true")
+    sim.add_argument("--with-codegen", action="store_true")
+    sim.add_argument("--dry-run", action="store_true")
 
     selfp = sub.add_parser("self", help="Body awareness – see own cells/code")
     self_sub = selfp.add_subparsers(dest="self_cmd")
@@ -536,6 +548,11 @@ class CLIController:
             return
         print("improve diagnose|run|auto|status")
 
+    def cmd_system(self, args):
+        from interfaces.cli.system_cli import run_system
+
+        run_system(args)
+
     def cmd_self(self, args):
         from interfaces.cli.self_cli import run_self
 
@@ -630,6 +647,9 @@ def main():
             return
         if cmd == "mutate":
             ctrl.cmd_mutate(args)
+            return
+        if cmd == "system":
+            ctrl.cmd_system(args)
             return
         if cmd == "self":
             ctrl.cmd_self(args)
