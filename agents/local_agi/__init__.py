@@ -6,6 +6,11 @@ from agents.local_agi.base_agent import (
     AgentStatus,
     ReflectionResult,
 )
+from agents.local_agi.planner_agent import PlannerAgent
+from agents.local_agi.reasoning_agent import ReasoningAgent
+from agents.local_agi.critic_agent import CriticAgent
+from agents.local_agi.execution_agent import ExecutionAgent
+from agents.local_agi.memory_agent import MemoryAgent
 
 __all__ = [
     "BaseAgent",
@@ -13,4 +18,9 @@ __all__ = [
     "AgentMessage",
     "AgentStatus",
     "ReflectionResult",
+    "PlannerAgent",
+    "ReasoningAgent",
+    "CriticAgent",
+    "ExecutionAgent",
+    "MemoryAgent",
 ]
