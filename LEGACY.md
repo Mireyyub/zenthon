@@ -1,22 +1,24 @@
 # Legacy / optional layers
 
-These packages are **not** the Leon cognitive core. They remain for historical ML experiments.
+These packages are **not** the Leon cognitive core.
 
-| Path | Role |
-|------|------|
-| `models/` | Classic ML/DL demos (sklearn/torch) |
-| `training/` | Supervised trainers / losses |
-| `inference/predictors` | Model predictor |
-| `inference/explainers` | SHAP/LIME helpers |
-| `interfaces/web/web_interface.py` | Old Flask UI – prefer GUI/API |
-| `inference/api/fastapi_app.py` | Deprecated; re-exports `interfaces.api.main` |
+| Path | Role | Status |
+|------|------|--------|
+| `models/` | Classic ML/DL demos | Deprecated import warning |
+| `training/` | Supervised trainers / losses | Deprecated import warning |
+| `inference/predictors` | Model predictor | Optional |
+| `inference/explainers` | SHAP/LIME helpers | Optional |
+| `interfaces/web` | Old Flask UI | Deprecated → GUI/API |
+| `inference/api/fastapi_app.py` | Re-exports cognitive app | Deprecated entry |
+| `brain.core.Brain` | Thin stub | Keep for import compat |
+| `brain.core_brain.ThinkingBrain` | LLM backend only | Internal to ReasoningEngine |
 
-**Canonical cognitive path**
+**Canonical path:** see `ARCHITECTURE.md`
 
 ```
-interfaces → brain.orchestrator → reasoning.engine
-  → knowledge + memory + learning + curriculum
+interfaces → BrainOrchestrator → ReasoningEngine
+  → knowledge.registry + memory + learning + curriculum
   → agents (react/coding) + security + omniverse
 ```
 
-Do not import `models.*` from cognitive modules.
+Do not import `models.*` or `training.*` from cognitive modules.
