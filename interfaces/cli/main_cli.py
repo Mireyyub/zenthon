@@ -128,11 +128,16 @@ def parse_args():
     imp_sub = imp.add_subparsers(dest="imp_cmd")
     idg = imp_sub.add_parser("diagnose")
     idg.add_argument("--volumes", default="01,02")
-    idg.add_argument("--json", action="store_true")
     irun = imp_sub.add_parser("run")
     irun.add_argument("--volumes", default="01,02")
     irun.add_argument("--dry-run", action="store_true")
-    irun.add_argument("--json", action="store_true")
+    irun.add_argument("--with-mutate", action="store_true")
+    iauto = imp_sub.add_parser("auto")
+    iauto.add_argument("--volumes", default="01,02")
+    iauto.add_argument("--rounds", type=int, default=3)
+    iauto.add_argument("--target", type=float, default=0.95)
+    iauto.add_argument("--with-mutate", action="store_true")
+    iauto.add_argument("--dry-run", action="store_true")
     imp_sub.add_parser("status")
 
     mut = sub.add_parser("mutate", help="Controlled source self-mutation")
@@ -151,7 +156,7 @@ def parse_args():
     ms.add_argument("--goal", default=None)
     ms.add_argument("--apply", action="store_true")
     ms.add_argument("--no-diagnose", action="store_true")
-    md = mut_sub.add_parser("diagnose")
+    mut_sub.add_parser("diagnose")
     mroute = mut_sub.add_parser("route")
     mroute.add_argument("--goal", required=True)
     ma = mut_sub.add_parser("apply")
@@ -453,7 +458,7 @@ class CLIController:
         print("image status|info|process|describe|understand|generate")
 
     def cmd_improve(self, args):
-        from brain.self_improve import SelfImproveEngine, improve
+        from brain.self_improve import SelfImproveEngine, improve, improve_auto
 
         eng = SelfImproveEngine()
         cmd = args.imp_cmd
@@ -465,10 +470,24 @@ class CLIController:
             print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
             return
         if cmd == "run":
-            out = improve(volumes=_vols(args.volumes), dry_run=args.dry_run)
+            out = improve(
+                volumes=_vols(args.volumes),
+                dry_run=args.dry_run,
+                with_mutate=bool(getattr(args, "with_mutate", False)),
+            )
             print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
             return
-        print("improve diagnose|run|status")
+        if cmd == "auto":
+            out = improve_auto(
+                volumes=_vols(args.volumes),
+                rounds=args.rounds,
+                target=args.target,
+                with_mutate=bool(getattr(args, "with_mutate", False)),
+                dry_run=args.dry_run,
+            )
+            print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
+            return
+        print("improve diagnose|run|auto|status")
 
     def cmd_mutate(self, args):
         from interfaces.cli.mutate_cli import run_mutate
