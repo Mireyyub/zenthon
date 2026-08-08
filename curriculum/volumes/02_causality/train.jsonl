@@ -3,3 +3,8 @@
 {"id":"000023","instruction":"Tüstü odun nəticəsi ola bilərmi?","output":"Bəli.","lesson":"000007","confidence":0.9,"tags":["effect"]}
 {"id":"000024","instruction":"Nəticə səbəbdən əvvəl gələ bilərmi?","output":"Xeyr.","lesson":"000007","confidence":0.9,"tags":["effect"]}
 {"id":"000025","instruction":"Səbəb nədir?","output":"Başqa bir hadisəni törədən amil.","lesson":"000006","confidence":0.85,"tags":["cause"]}
+{"id":"000026","instruction":"Yerin islanması yağışın nəticəsi ola bilərmi?","output":"Bəli.","lesson":"000007","confidence":0.9,"tags":["effect"]}
+{"id":"000027","instruction":"Korrelyasiya səbəbiyyət deməkdirmi?","output":"Xeyr.","lesson":"000008","confidence":0.9,"tags":["correlation"]}
+{"id":"000028","instruction":"İki hadisə eyni anda artsa, biri digərinin səbəbidirmi?","output":"Mütləq deyil.","lesson":"000008","confidence":0.9,"tags":["correlation"]}
+{"id":"000029","instruction":"Səbəbiyyət üçün nə lazımdır?","output":"Mexanizm və zamansal sıra.","lesson":"000008","confidence":0.85,"tags":["correlation"]}
+{"id":"000030","instruction":"Səbəb zamanca nəticədən əvvəl gəlirmi?","output":"Bəli.","lesson":"000006","confidence":0.9,"tags":["cause"]}

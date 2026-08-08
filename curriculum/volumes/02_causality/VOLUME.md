@@ -1,32 +1,11 @@
-# LEON Genesis Curriculum
+# Volume 02 — Causality
 
-Volume: 02
+**Purpose:** LEON səbəb–nəticə, korrelyasiya fərqi və zamansal qaydanı öyrənsin.
 
-Name:
-Causality
+After this volume LEON should know:
+- Səbəb (cause)
+- Nəticə (effect)
+- Korrelyasiya ≠ səbəbiyyət
+- Səbəb zamanca nəticədən əvvəl gəlir
 
-Version:
-1.0.0
-
---------------------------------------------------
-
-Purpose
-
-Bu cild LEON-a səbəb və nəticə anlayışını öyrədir.
-
-Bu cild bitdikdən sonra LEON bilməlidir:
-
-- Səbəb
-- Nəticə
-- Səbəb-nəticə əlaqəsi
-
---------------------------------------------------
-
-Lessons
-
-000006 Cause
-000007 Effect
-
---------------------------------------------------
-
-END OF VOLUME
+Lessons: 000006 Cause · 000007 Effect · 000008 Correlation

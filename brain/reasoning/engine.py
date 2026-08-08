@@ -1,5 +1,6 @@
 """
-Reasoning Engine (spec 020) — LEON vahid düşüncə yolu.
+Reasoning Engine — single cognitive path for Leon.
+Evidence: curriculum > facts > graph > memory > LLM.
 """
 
 from __future__ import annotations
@@ -100,8 +101,8 @@ class ReasoningEngine:
         candidates: List[Tuple[str, str, float]] = []
 
         strategy = self._pick_strategy(request, strategy)
-        retrieved = self._retrieve(request, evidence)
 
+        # 1) Curriculum (highest)
         curr = self._try_curriculum(request)
         if curr:
             ans, src = curr
@@ -110,15 +111,22 @@ class ReasoningEngine:
                 EvidenceItem(kind="curriculum", content=f"{src}: {ans}", weight=0.95, ref=src)
             )
 
+        # 2) Retrieve facts/graph/memory → evidence + candidates
+        retrieved = self._retrieve(request, evidence, candidates)
+
+        # 3) LLM only if no strong candidate or explicit mode
         llm_used = False
         brain_method = strategy
-        if use_brain and (not candidates or reasoning_mode):
+        strong = any(c[2] >= 0.8 for c in candidates)
+        if use_brain and (not strong or reasoning_mode):
             try:
                 if self._brain is None:
                     from brain.core_brain import ThinkingBrain
                     from core.config import config
 
-                    self._brain = ThinkingBrain(name=getattr(config, "ai_name", "Leon") or "Leon")
+                    self._brain = ThinkingBrain(
+                        name=getattr(config, "ai_name", "Leon") or "Leon"
+                    )
                 mode = reasoning_mode or {
                     "deduction": "cot",
                     "induction": "tot",
@@ -128,7 +136,9 @@ class ReasoningEngine:
                 result = self._brain.think(request, goal=goal, reasoning_mode=mode)
                 conclusion = str(result.get("conclusion") or "").strip()
                 if conclusion:
-                    candidates.append((conclusion, "llm", float(result.get("confidence") or 0.55)))
+                    candidates.append(
+                        (conclusion, "llm", float(result.get("confidence") or 0.55))
+                    )
                     evidence.append(
                         EvidenceItem(
                             kind="llm",
@@ -153,6 +163,7 @@ class ReasoningEngine:
             "graph": 0.82,
             "llm": 0.6,
             "unknown": 0.4,
+            "conflict": 0.3,
         }.get(source.split(":")[0] if source else "unknown", 0.5)
         consistency = 0.9 if validation == "ok" else (0.45 if validation == "conflict" else 0.2)
         base = candidates[0][2] if candidates else 0.0
@@ -162,7 +173,9 @@ class ReasoningEngine:
             evidence_quality=eq,
             source_reliability=src_rel,
             consistency=consistency,
-            method=source.split(":")[0] if source and source != "llm" else (brain_method or "unknown"),
+            method=source.split(":")[0]
+            if source and source != "llm"
+            else (brain_method or "unknown"),
             has_goal=goal is not None,
             memory_hits=len(retrieved),
             uncertainty=0.0 if validation == "ok" else 0.4,
@@ -242,7 +255,9 @@ class ReasoningEngine:
         def prio(src: str) -> int:
             return priority.get(src.split(":")[0], 10)
 
-        candidates_sorted = sorted(candidates, key=lambda c: (prio(c[1]), c[2]), reverse=True)
+        candidates_sorted = sorted(
+            candidates, key=lambda c: (prio(c[1]), c[2]), reverse=True
+        )
         best_text, best_src, _ = candidates_sorted[0]
 
         def polarity(t: str) -> Optional[str]:
@@ -258,24 +273,41 @@ class ReasoningEngine:
             if prio(src) >= 80 and prio(best_src) >= 80:
                 pol = polarity(text)
                 if best_pol and pol and best_pol != pol:
-                    msg = f"Konflikt: '{best_text[:80]}' ({best_src}) vs '{text[:80]}' ({src})"
+                    msg = (
+                        f"Konflikt: '{best_text[:80]}' ({best_src}) "
+                        f"vs '{text[:80]}' ({src})"
+                    )
                     return "UNKNOWN", "conflict", "conflict", msg
 
         return best_text, best_src, "ok", None
 
-    def _retrieve(self, query: str, evidence: List[EvidenceItem]) -> List[str]:
+    def _retrieve(
+        self,
+        query: str,
+        evidence: List[EvidenceItem],
+        candidates: List[Tuple[str, str, float]],
+    ) -> List[str]:
         hits: List[str] = []
+        q_low = (query or "").lower()
+
         try:
             from knowledge.registry import get_fact_store
 
             for f in get_fact_store().search(query, top_k=5):
                 stmt = f.get("statement", "")
                 hits.append(stmt)
+                conf = float(f.get("confidence") or 0.8)
                 evidence.append(
-                    EvidenceItem(kind="fact", content=stmt, weight=0.75, ref=f.get("id", ""))
+                    EvidenceItem(
+                        kind="fact", content=stmt, weight=0.75, ref=f.get("id", "")
+                    )
                 )
+                # Promote short / polar / high-overlap facts to candidates
+                if self._fact_answers_query(q_low, stmt):
+                    candidates.append((stmt, "facts", min(0.88, 0.7 + 0.15 * conf)))
         except Exception:
             pass
+
         try:
             from knowledge.registry import get_graph
 
@@ -284,10 +316,28 @@ class ReasoningEngine:
                 label = n.get("label", "")
                 hits.append(label)
                 evidence.append(
-                    EvidenceItem(kind="graph", content=label, weight=0.7, ref=n.get("id", ""))
+                    EvidenceItem(
+                        kind="graph", content=label, weight=0.7, ref=n.get("id", "")
+                    )
                 )
+                # is_a chain as weak candidate
+                try:
+                    for nb, rel in kg.neighbors(n["id"])[:4]:
+                        if rel in ("is_a", "type", "category"):
+                            line = f"{label} {rel} {nb.get('label')}"
+                            hits.append(line)
+                            evidence.append(
+                                EvidenceItem(
+                                    kind="graph", content=line, weight=0.72, ref=rel
+                                )
+                            )
+                            if any(t in q_low for t in ("nədir", "hansı", "category", "kateqor")):
+                                candidates.append((nb.get("label") or line, "graph", 0.78))
+                except Exception:
+                    pass
         except Exception:
             pass
+
         try:
             from memory import MemoryManager
 
@@ -296,12 +346,30 @@ class ReasoningEngine:
                 hits.append(text)
                 evidence.append(
                     EvidenceItem(
-                        kind="memory", content=text, weight=float(score) if score else 0.5, ref="vector"
+                        kind="memory",
+                        content=text,
+                        weight=float(score) if score else 0.5,
+                        ref="vector",
                     )
                 )
         except Exception:
             pass
+
         return hits
+
+    def _fact_answers_query(self, q_low: str, stmt: str) -> bool:
+        s = (stmt or "").lower().strip()
+        if not s:
+            return False
+        if s.startswith("bəli") or s.startswith("xeyr") or s.startswith("yes") or s.startswith("no"):
+            return True
+        # high token overlap
+        qt = set(w for w in q_low.split() if len(w) > 2)
+        st = set(w for w in s.split() if len(w) > 2)
+        if not qt:
+            return False
+        overlap = len(qt & st) / max(1, len(qt))
+        return overlap >= 0.5 and len(s) < 200
 
     def _try_curriculum(self, request: str) -> Optional[Tuple[str, str]]:
         try:
