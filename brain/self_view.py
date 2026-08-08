@@ -1,26 +1,16 @@
 """
 Leon Self-View — body awareness / introspection.
 
-Leon can see:
-- organ systems (top-level packages = cells)
-- modules and line counts
-- function/class AST map
-- source slices (with line numbers)
-- search across own codebase
-- mutability status per path
-
-This is READ-first body awareness. Writing still goes through SelfMutate + gates.
+Leon can see organs (cells), modules, lines, AST symbols, search own code.
+Write path remains gated.
 """
 
 from __future__ import annotations
 
 import ast
-import os
-import re
-from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from core.persistence import write_json
 
@@ -38,7 +28,6 @@ SKIP_DIRS = {
     ".eggs",
 }
 
-# Biological metaphor: packages as organ systems / cells
 ORGANS = {
     "brain": "cognitive_core",
     "core": "vital_organs",
@@ -71,12 +60,9 @@ def _repo_root() -> Path:
 
 
 class SelfView:
-    """Leon looks at its own body (source tree)."""
-
     def __init__(self, repo_root: Optional[Path] = None):
         self.root = Path(repo_root) if repo_root else _repo_root()
 
-    # ------------------------------------------------------------------ inventory
     def map(self, *, include_lines: bool = True) -> Dict[str, Any]:
         cells: Dict[str, Dict[str, Any]] = {}
         total_py = 0
@@ -99,12 +85,13 @@ class SelfView:
                 organ_lines += nlines
                 total_lines += nlines
                 total_py += 1
-                entry: Dict[str, Any] = {
-                    "path": rel,
-                    "lines": nlines if include_lines else None,
-                    "mutable": self.mutability(rel)["mutable"],
-                }
-                modules.append(entry)
+                modules.append(
+                    {
+                        "path": rel,
+                        "lines": nlines if include_lines else None,
+                        "mutable": self.mutability(rel)["mutable"],
+                    }
+                )
             cells[organ] = {
                 "role": role,
                 "module_count": len(modules),
@@ -122,7 +109,7 @@ class SelfView:
                 "approx_lines": total_lines,
             },
             "cells": cells,
-            "note": "Write path remains gated (SelfMutate + LEON_ALLOW_MUTATE + green-gate).",
+            "note": "Write: LEON_ALLOW_MUTATE + allowlist + green-gate. Read: unrestricted within repo.",
         }
         try:
             from core.config import config
@@ -135,7 +122,6 @@ class SelfView:
         return out
 
     def cell(self, name: str) -> Dict[str, Any]:
-        """Detail one organ/cell (e.g. brain, agents)."""
         name = (name or "").strip().strip("/")
         d = self.root / name
         if not d.exists():
@@ -166,7 +152,6 @@ class SelfView:
             "files": files,
         }
 
-    # ------------------------------------------------------------------ read lines
     def read(
         self,
         path: str,
@@ -175,7 +160,6 @@ class SelfView:
         end: Optional[int] = None,
         max_lines: int = 200,
     ) -> Dict[str, Any]:
-        """Read own source with line numbers (default window 200 lines)."""
         rel = path.replace("\\", "/").lstrip("./")
         target = (self.root / rel).resolve()
         try:
@@ -190,13 +174,9 @@ class SelfView:
         if end is None:
             end = start + max_lines - 1
         end = min(len(lines), max(start, int(end)))
-        # hard cap
         if end - start + 1 > max_lines:
             end = start + max_lines - 1
-        window = [
-            {"n": i, "text": lines[i - 1]}
-            for i in range(start, end + 1)
-        ]
+        window = [{"n": i, "text": lines[i - 1]} for i in range(start, end + 1)]
         return {
             "ok": True,
             "path": rel,
@@ -208,7 +188,6 @@ class SelfView:
         }
 
     def symbols(self, path: str) -> Dict[str, Any]:
-        """AST map of classes/functions in a module."""
         rel = path.replace("\\", "/").lstrip("./")
         target = self.root / rel
         if not target.exists():
@@ -228,9 +207,7 @@ class SelfView:
                     for n in node.body
                     if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
                 ]
-                classes.append(
-                    {"name": node.name, "lineno": node.lineno, "methods": methods}
-                )
+                classes.append({"name": node.name, "lineno": node.lineno, "methods": methods})
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 functions.append({"name": node.name, "lineno": node.lineno})
 
@@ -243,13 +220,8 @@ class SelfView:
         }
 
     def search(
-        self,
-        query: str,
-        *,
-        path_prefix: str = "",
-        max_hits: int = 40,
+        self, query: str, *, path_prefix: str = "", max_hits: int = 40
     ) -> Dict[str, Any]:
-        """Full-text search across Leon source."""
         q = (query or "").strip()
         if not q:
             return {"ok": False, "error": "empty query"}
@@ -276,21 +248,34 @@ class SelfView:
         return {"ok": True, "query": q, "hits": hits, "truncated": False}
 
     def mutability(self, path: str) -> Dict[str, Any]:
+        rel = path.replace("\\", "/").lstrip("./")
         try:
-            from brain.self_mutate import SelfMutateEngine
+            from brain.mutate_allowlist import ALLOWED_PREFIXES, FORBIDDEN_PREFIXES
 
-            eng = SelfMutateEngine(repo_root=self.root)
-            ok, reason = eng.is_allowed(path)
-            return {
-                "mutable": ok,
-                "reason": reason,
-                "apply_gate": eng.mutation_enabled(),
-            }
-        except Exception as e:
-            return {"mutable": False, "reason": str(e), "apply_gate": False}
+            for bad in FORBIDDEN_PREFIXES:
+                if rel.startswith(bad) or rel == bad.rstrip("/"):
+                    return {"mutable": False, "reason": f"forbidden:{bad}", "apply_gate": False}
+            for good in ALLOWED_PREFIXES:
+                if rel.startswith(good) or rel == good.rstrip("/"):
+                    try:
+                        from brain.self_mutate import SelfMutateEngine
+
+                        gate = SelfMutateEngine().mutation_enabled()
+                    except Exception:
+                        gate = False
+                    return {"mutable": True, "reason": "allowlist", "apply_gate": gate}
+            return {"mutable": False, "reason": "not in allowlist", "apply_gate": False}
+        except Exception:
+            try:
+                from brain.self_mutate import SelfMutateEngine
+
+                eng = SelfMutateEngine(repo_root=self.root)
+                ok, reason = eng.is_allowed(path)
+                return {"mutable": ok, "reason": reason, "apply_gate": eng.mutation_enabled()}
+            except Exception as e:
+                return {"mutable": False, "reason": str(e), "apply_gate": False}
 
     def body(self) -> Dict[str, Any]:
-        """Compact self-portrait for status/GUI."""
         m = self.map(include_lines=True)
         cells = {
             k: {"role": v["role"], "modules": v["module_count"], "lines": v["lines"]}
@@ -306,6 +291,7 @@ class SelfView:
                 "self_code": "brain/self_code.py",
                 "self_improve": "brain/self_improve.py",
                 "code_verify": "brain/code_verify.py",
+                "mutate_allowlist": "brain/mutate_allowlist.py",
             },
             "write_policy": "allowlist + LEON_ALLOW_MUTATE + green-gate; security/core/kernel forbidden",
         }
