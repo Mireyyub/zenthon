@@ -5,9 +5,7 @@ Safety model:
 - Explicit enable: env LEON_ALLOW_MUTATE=1 required for apply
 - Path allowlist only; security/, kernel, .git forever forbidden
 - Backup before write; AST parse for .py; optional smoke; rollback
-- Never grants shell/network tools via mutation of security modules
-
-This is deliberate evolution under gates — not unrestricted self-rewriting.
+- Mutator cannot rewrite itself
 """
 
 from __future__ import annotations
@@ -41,7 +39,6 @@ def _mutate_dir() -> Path:
     return d
 
 
-# Relative to repo root
 ALLOWED_PREFIXES = (
     "curriculum/volumes/",
     "genome/",
@@ -72,7 +69,7 @@ FORBIDDEN_PREFIXES = (
     "venv/",
     ".venv/",
     "__pycache__/",
-    "brain/self_mutate.py",  # cannot rewrite the mutator itself in-loop
+    "brain/self_mutate.py",
 )
 
 
@@ -86,7 +83,12 @@ class SelfMutateEngine:
         self.dir = _mutate_dir()
 
     def mutation_enabled(self) -> bool:
-        return os.environ.get("LEON_ALLOW_MUTATE", "").strip() in ("1", "true", "yes", "on")
+        return os.environ.get("LEON_ALLOW_MUTATE", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
 
     def is_allowed(self, rel_path: str) -> Tuple[bool, str]:
         rel = rel_path.replace("\\", "/").lstrip("./")
@@ -109,7 +111,6 @@ class SelfMutateEngine:
             raise MutationError("Path escapes repo root") from e
         return p
 
-    # ------------------------------------------------------------------ propose
     def propose(
         self,
         path: str,
@@ -121,12 +122,6 @@ class SelfMutateEngine:
         reason: str = "",
         author: str = "leon",
     ) -> Dict[str, Any]:
-        """
-        mode:
-          replace — old must appear exactly once
-          append  — append new to file
-          write   — full file content (dangerous; still allowlisted)
-        """
         rel = path.replace("\\", "/").lstrip("./")
         ok, why = self.is_allowed(rel)
         if not ok:
@@ -156,7 +151,6 @@ class SelfMutateEngine:
         else:
             return {"ok": False, "error": f"unknown mode: {mode}"}
 
-        # syntax check for python
         syntax_ok = True
         syntax_error = None
         if rel.endswith(".py"):
@@ -182,13 +176,11 @@ class SelfMutateEngine:
             "bytes_after": len(mutated.encode()),
             "diff_preview": self._preview(original, mutated),
             "status": "proposed" if syntax_ok else "rejected_syntax",
-            # store payloads for apply
             "_original": original,
             "_mutated": mutated,
         }
-        # persist without huge optional if too large — always store for apply
         write_json(self.dir / "proposals" / f"{pid}.json", proposal)
-        write_json(self.dir / "last_proposal.json", {k: v for k, v in proposal.items()})
+        write_json(self.dir / "last_proposal.json", proposal)
         return {
             "ok": syntax_ok,
             "proposal_id": pid,
@@ -204,12 +196,7 @@ class SelfMutateEngine:
         }
 
     def propose_from_goal(self, goal: str) -> Dict[str, Any]:
-        """
-        Heuristic/LLM-assisted proposal generator.
-        Safe defaults: append train.jsonl QA or genome note — not arbitrary code.
-        """
         goal_l = (goal or "").lower()
-        # Prefer knowledge mutation over code
         if any(k in goal_l for k in ("öyrən", "learn", "fact", "bilik", "qa", "sual")):
             path = "curriculum/volumes/01_foundation/train.jsonl"
             line = (
@@ -218,29 +205,35 @@ class SelfMutateEngine:
                 % (uuid.uuid4().hex[:6], goal[:80].replace('"', "'"))
             )
             return self.propose(
-                path, mode="append", new=line, reason=f"goal:{goal[:120]}", author="leon:heuristic"
+                path,
+                mode="append",
+                new=line,
+                reason=f"goal:{goal[:120]}",
+                author="leon:heuristic",
             )
 
-        # Try LLM for a surgical replace only inside allowlisted coding_agent docstring
         try:
             from brain.llm.client import get_llm_client
+            import json as _json
+            import re
 
             client = get_llm_client()
             path = "agents/coding_agent.py"
-            src = (self.root / path).read_text(encoding="utf-8")
+            src_path = self.root / path
+            if not src_path.exists():
+                return {"ok": False, "error": f"missing {path}"}
+            src = src_path.read_text(encoding="utf-8")
             prompt = (
-                "Leon self-mutate. Return ONLY a JSON object with keys old and new. "
-                "old must be an exact unique substring from the file (max 8 lines). "
-                "new is improved version. Goal: "
+                "Return ONLY JSON {\"old\":\"...\",\"new\":\"...\"}. "
+                "old = exact unique substring (max 8 lines). Goal: "
                 + goal[:200]
-                + "\n\nFILE START\n"
+                + "\n\nFILE:\n"
                 + src[:4000]
             )
-            reply = client.complete(prompt, system="Output JSON only: {\"old\":\"...\",\"new\":\"...\"}")
+            reply = client.complete(
+                prompt, system='Output JSON only: {"old":"...","new":"..."}'
+            )
             if reply and "{" in reply:
-                import json as _json
-                import re
-
                 m = re.search(r"\{.*\}", reply, re.S)
                 if m:
                     data = _json.loads(m.group(0))
@@ -266,23 +259,19 @@ class SelfMutateEngine:
             return "(no change)"
         o = old.splitlines()
         n = new.splitlines()
-        # simple: show length delta + first differing region
         for i, (a, b) in enumerate(zip(o, n)):
             if a != b:
                 start = max(0, i - 1)
-                chunk_o = o[start : start + lines]
-                chunk_n = n[start : start + lines]
                 return (
                     "--- old ---\n"
-                    + "\n".join(chunk_o)
+                    + "\n".join(o[start : start + lines])
                     + "\n+++ new +++\n"
-                    + "\n".join(chunk_n)
+                    + "\n".join(n[start : start + lines])
                 )
         if len(n) > len(o):
             return "+++ appended +++\n" + "\n".join(n[len(o) : len(o) + lines])
         return f"bytes {len(old)} → {len(new)}"
 
-    # ------------------------------------------------------------------ apply
     def apply(
         self,
         proposal_id: Optional[str] = None,
@@ -306,7 +295,11 @@ class SelfMutateEngine:
             return {"ok": False, "error": "no proposal"}
 
         if not prop.get("syntax_ok", True):
-            return {"ok": False, "error": "proposal failed syntax check", "detail": prop.get("syntax_error")}
+            return {
+                "ok": False,
+                "error": "proposal failed syntax check",
+                "detail": prop.get("syntax_error"),
+            }
 
         rel = prop["path"]
         try:
@@ -319,7 +312,6 @@ class SelfMutateEngine:
         if mutated is None:
             return {"ok": False, "error": "proposal missing _mutated payload"}
 
-        # backup
         mid = prop.get("id") or ("MU-" + uuid.uuid4().hex[:8])
         backup_path = self.dir / "backups" / f"{mid}_{Path(rel).name}.bak"
         if target.exists():
@@ -327,7 +319,6 @@ class SelfMutateEngine:
         else:
             backup_path.write_text("", encoding="utf-8")
 
-        # write
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(mutated, encoding="utf-8")
 
@@ -336,7 +327,6 @@ class SelfMutateEngine:
         if run_smoke and rel.endswith(".py"):
             smoke_report = self._smoke()
             if not smoke_report.get("ok"):
-                # rollback
                 target.write_text(original if original is not None else "", encoding="utf-8")
                 rolled_back = True
 
@@ -356,14 +346,14 @@ class SelfMutateEngine:
         runs.append(record)
         write_json(self.dir / "history.json", {"runs": runs[-100:]})
 
-        # audit
         try:
             from security.audit import audit_log
 
-            audit_log(
+            audit_log.log(
                 "self_mutate",
-                {"path": rel, "id": mid, "rolled_back": rolled_back},
                 user="leon",
+                details={"path": rel, "id": mid, "rolled_back": rolled_back},
+                success=not rolled_back,
             )
         except Exception:
             pass
@@ -378,7 +368,6 @@ class SelfMutateEngine:
             r = smoke_test()
             return {"ok": bool(r.get("overall_ok")), "detail": r.get("results")}
         except Exception as e:
-            # lighter: import brain.reasoning
             try:
                 from brain.reasoning.engine import ReasoningEngine
 
@@ -391,11 +380,9 @@ class SelfMutateEngine:
         backups = list((self.dir / "backups").glob(f"{mutation_id}_*.bak"))
         if not backups:
             return {"ok": False, "error": f"no backup for {mutation_id}"}
-        # find proposal for path
         prop = read_json(self.dir / "proposals" / f"{mutation_id}.json", default={})
         rel = prop.get("path")
         if not rel:
-            # try last_apply
             last = read_json(self.dir / "last_apply.json", default={})
             rel = last.get("path")
         if not rel:
