@@ -1,4 +1,4 @@
-"""Leon CLI – cognitive + omniverse + image."""
+"""Leon CLI – cognitive + omniverse + image + self-improve."""
 
 import argparse
 import sys
@@ -110,7 +110,7 @@ def parse_args():
     iund.add_argument("path")
     iund.add_argument("--question", default=None)
     iund.add_argument("--no-vlm", action="store_true")
-    iund.add_argument("--inject", action="store_true", help="Summary-ni FactStore-a yaz")
+    iund.add_argument("--inject", action="store_true")
     iund.add_argument("--json", action="store_true")
     igen = img_sub.add_parser("generate")
     igen.add_argument("--prompt", default="leon abstract")
@@ -123,6 +123,17 @@ def parse_args():
     igen.add_argument("--height", type=int, default=512)
     igen.add_argument("--seed", type=int, default=None)
     igen.add_argument("--json", action="store_true")
+
+    imp = sub.add_parser("improve", help="Self-improvement cycle")
+    imp_sub = imp.add_subparsers(dest="imp_cmd")
+    idg = imp_sub.add_parser("diagnose")
+    idg.add_argument("--volumes", default="01,02", help="comma-separated volume ids")
+    idg.add_argument("--json", action="store_true")
+    irun = imp_sub.add_parser("run")
+    irun.add_argument("--volumes", default="01,02")
+    irun.add_argument("--dry-run", action="store_true")
+    irun.add_argument("--json", action="store_true")
+    imp_sub.add_parser("status")
 
     teach_p = sub.add_parser("teach")
     teach_p.add_argument("lesson_id", nargs="?", default="000001")
@@ -147,6 +158,10 @@ def _print_reason(result: dict):
     print(f"Confidence : {result.get('confidence')} ({result.get('confidence_label')})")
     print(f"Source     : {result.get('source')}")
     print(f"Trace ID   : {result.get('trace_id')}")
+
+
+def _vols(s: str):
+    return [v.strip() for v in (s or "01").split(",") if v.strip()]
 
 
 class CLIController:
@@ -412,6 +427,24 @@ class CLIController:
             return
         print("image status|info|process|describe|understand|generate")
 
+    def cmd_improve(self, args):
+        from brain.self_improve import SelfImproveEngine, improve
+
+        eng = SelfImproveEngine()
+        cmd = args.imp_cmd
+        if cmd == "status" or cmd is None:
+            print(json.dumps(eng.status(), ensure_ascii=False, indent=2, default=str))
+            return
+        if cmd == "diagnose":
+            out = eng.diagnose(volumes=_vols(args.volumes))
+            print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
+            return
+        if cmd == "run":
+            out = improve(volumes=_vols(args.volumes), dry_run=args.dry_run)
+            print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
+            return
+        print("improve diagnose|run|status")
+
     def cmd_teach(self, args):
         from curriculum import CurriculumEngine
         from core.bootstrap import save_state
@@ -487,6 +520,9 @@ def main():
             return
         if cmd == "image":
             ctrl.cmd_image(args)
+            return
+        if cmd == "improve":
+            ctrl.cmd_improve(args)
             return
         mapping = {
             "start": lambda: ctrl.cmd_start(args),
