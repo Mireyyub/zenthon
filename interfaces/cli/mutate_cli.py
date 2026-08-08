@@ -1,4 +1,4 @@
-"""CLI helpers for self-mutation v2."""
+"""CLI helpers for self-mutation v2 + code author."""
 
 from __future__ import annotations
 
@@ -54,6 +54,24 @@ def run_mutate(args: Any) -> None:
         print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
         return
 
+    if cmd == "write" or cmd == "codegen":
+        from brain.self_code import CodeAuthor
+
+        author = CodeAuthor()
+        goal = getattr(args, "goal", None) or ""
+        if not goal:
+            print(json.dumps({"ok": False, "error": "--goal required"}))
+            return
+        out = author.write_code(
+            goal,
+            path=getattr(args, "path", None),
+            create=bool(getattr(args, "create", True)),
+            apply=bool(getattr(args, "apply", False)),
+            use_llm=not bool(getattr(args, "no_llm", False)),
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
+        return
+
     if cmd == "smart":
         goal = getattr(args, "goal", None) or ""
         out = eng.auto_cycle(
@@ -106,4 +124,6 @@ def run_mutate(args: Any) -> None:
         print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
         return
 
-    print("mutate status|propose|smart|evolve|diagnose|route|list|strategies|apply|rollback")
+    print(
+        "mutate status|propose|write|codegen|smart|evolve|diagnose|route|list|strategies|apply|rollback"
+    )
