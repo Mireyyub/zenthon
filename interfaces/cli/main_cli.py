@@ -1,4 +1,4 @@
-"""Leon CLI – cognitive + omniverse + image + improve + mutate + system."""
+"""Leon CLI – cognitive + omniverse + image + improve + mutate + system + cycle."""
 
 import argparse
 import sys
@@ -189,6 +189,16 @@ def parse_args():
     ma.add_argument("--no-smoke", action="store_true")
     mr = mut_sub.add_parser("rollback")
     mr.add_argument("mutation_id")
+
+    cyc = sub.add_parser("cycle", help="AGI-oriented cognitive cycle PODALR")
+    cyc.add_argument("query", type=str)
+    cyc.add_argument("--goal", default=None)
+    cyc.add_argument("--image", default=None)
+    cyc.add_argument("--agent", default=None)
+    cyc.add_argument("--experimental", action="store_true")
+    cyc.add_argument("--no-learn", action="store_true")
+    cyc.add_argument("--no-reflect", action="store_true")
+    cyc.add_argument("--json", action="store_true")
 
     sysp = sub.add_parser("system", help="Whole-system status / improve / smoke")
     sys_sub = sysp.add_subparsers(dest="sys_cmd")
@@ -548,6 +558,11 @@ class CLIController:
             return
         print("improve diagnose|run|auto|status")
 
+    def cmd_cycle(self, args):
+        from interfaces.cli.cycle_cli import run_cycle
+
+        run_cycle(args)
+
     def cmd_system(self, args):
         from interfaces.cli.system_cli import run_system
 
@@ -647,6 +662,9 @@ def main():
             return
         if cmd == "mutate":
             ctrl.cmd_mutate(args)
+            return
+        if cmd == "cycle":
+            ctrl.cmd_cycle(args)
             return
         if cmd == "system":
             ctrl.cmd_system(args)
