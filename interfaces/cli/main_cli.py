@@ -132,11 +132,13 @@ def parse_args():
     irun.add_argument("--volumes", default="01,02")
     irun.add_argument("--dry-run", action="store_true")
     irun.add_argument("--with-mutate", action="store_true")
+    irun.add_argument("--with-codegen", action="store_true")
     iauto = imp_sub.add_parser("auto")
     iauto.add_argument("--volumes", default="01,02")
     iauto.add_argument("--rounds", type=int, default=3)
     iauto.add_argument("--target", type=float, default=0.95)
     iauto.add_argument("--with-mutate", action="store_true")
+    iauto.add_argument("--with-codegen", action="store_true")
     iauto.add_argument("--dry-run", action="store_true")
     imp_sub.add_parser("status")
 
@@ -497,6 +499,7 @@ class CLIController:
                 volumes=_vols(args.volumes),
                 dry_run=args.dry_run,
                 with_mutate=bool(getattr(args, "with_mutate", False)),
+                with_codegen=bool(getattr(args, "with_codegen", False)),
             )
             print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
             return
@@ -506,6 +509,7 @@ class CLIController:
                 rounds=args.rounds,
                 target=args.target,
                 with_mutate=bool(getattr(args, "with_mutate", False)),
+                with_codegen=bool(getattr(args, "with_codegen", False)),
                 dry_run=args.dry_run,
             )
             print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
@@ -513,7 +517,6 @@ class CLIController:
         print("improve diagnose|run|auto|status")
 
     def cmd_mutate(self, args):
-        # normalize --no-create
         if getattr(args, "mut_cmd", None) in ("write", "codegen"):
             if getattr(args, "no_create", False):
                 args.create = False
