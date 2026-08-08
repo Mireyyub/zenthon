@@ -1,0 +1,16 @@
+[
+  {"intent": "help", "text": "kömək"},
+  {"intent": "help", "text": "komandalar"},
+  {"intent": "help", "text": "nə bilirsən"},
+  {"intent": "help", "text": "help"},
+  {"intent": "device_on", "text": "işığı yandır"},
+  {"intent": "device_on", "text": "işığı aç"},
+  {"intent": "device_off", "text": "işığı söndür"},
+  {"intent": "device_off", "text": "işığı bağla"},
+  {"intent": "think", "text": "düşün"},
+  {"intent": "think", "text": "plan qur"},
+  {"intent": "math", "text": "hesabla"},
+  {"intent": "math", "text": "riyaziyyat"},
+  {"intent": "status", "text": "status"},
+  {"intent": "status", "text": "vəziyyət"}
+]
