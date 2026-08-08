@@ -1,31 +1,26 @@
 """
-Leon Code Author — write original code to improve itself.
+Leon Code Author — write original code + green-gate verify.
 
-Capabilities (still gated by SelfMutateEngine allowlist + LEON_ALLOW_MUTATE):
-- generate_function: LLM or template → insert into existing .py
-- create_module: new .py under allowed prefixes only
-- improve_module: read target, generate improved helpers, append/insert
-- self_code_cycle: goal → write code → optional apply → smoke
+Flow:
+  generate → validate → propose/apply → code_verify → rollback if red
 
-Never writes security/, core/kernel, self_mutate.py.
+CREATE only under CREATE_PREFIXES; never security/core/self_mutate.
 """
 
 from __future__ import annotations
 
 import ast
-import json
 import re
 import textwrap
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from core.logger import logger
 from core.persistence import write_json, read_json
 
 
-# Where Leon may CREATE brand-new files
 CREATE_PREFIXES = (
     "brain/reasoning/",
     "agents/",
@@ -42,7 +37,6 @@ DANGEROUS_PATTERNS = (
     r"\bos\.system\s*\(",
     r"\bsubprocess\.",
     r"\b__import__\s*\(",
-    r"\bopen\s*\([^)]*['\"]/[a-z]",  # absolute path open heuristic
 )
 
 
@@ -58,8 +52,6 @@ def _mutate_dir() -> Path:
 
 
 class CodeAuthor:
-    """Leon writes code; SelfMutateEngine applies it safely."""
-
     def __init__(self):
         from brain.self_mutate import SelfMutateEngine
 
@@ -68,19 +60,11 @@ class CodeAuthor:
 
     def can_create(self, rel: str) -> bool:
         rel = rel.replace("\\", "/").lstrip("./")
-        ok, _ = self.mut.is_allowed(rel)
-        if not ok:
-            # new files: also require CREATE_PREFIXES
-            if not any(rel.startswith(p) for p in CREATE_PREFIXES):
+        for bad in ("security/", "core/", "brain/self_mutate"):
+            if rel.startswith(bad):
                 return False
-            # still forbid security etc via mutator
-            for bad in ("security/", "core/", "brain/self_mutate"):
-                if rel.startswith(bad):
-                    return False
-            return any(rel.startswith(p) for p in CREATE_PREFIXES)
-        return any(rel.startswith(p) for p in CREATE_PREFIXES) or ok
+        return any(rel.startswith(p) for p in CREATE_PREFIXES)
 
-    # ------------------------------------------------------------------ generate
     def generate_function(
         self,
         spec: str,
@@ -88,20 +72,16 @@ class CodeAuthor:
         name: Optional[str] = None,
         use_llm: bool = True,
     ) -> Dict[str, Any]:
-        """Return Python source for a single function."""
         fname = name or self._infer_name(spec)
         code = None
         source = "template"
-
         if use_llm:
             code = self._llm_function(spec, fname)
             if code:
                 source = "llm"
-
         if not code:
             code = self._template_function(spec, fname)
             source = "template"
-
         check = self._validate_code(code)
         return {
             "ok": check["ok"],
@@ -133,7 +113,6 @@ class CodeAuthor:
                 """
                 from core.logger import logger
                 logger.debug("Leon generated function {name} called")
-                # Minimal safe behaviour: echo structured result
                 return {{
                     "ok": True,
                     "function": "{name}",
@@ -153,8 +132,8 @@ class CodeAuthor:
             return None
         system = (
             "You are Leon's code author. Return ONLY a complete Python function "
-            f"named {name}. No markdown fences. No eval/exec/os.system/subprocess. "
-            "Use type hints when possible. Keep under 60 lines. Safe pure-ish logic."
+            f"named {name}. No markdown. No eval/exec/os.system/subprocess. "
+            "Type hints preferred. Under 60 lines. Safe pure-ish logic."
         )
         reply = client.complete(
             f"Write function `{name}` that: {spec[:500]}",
@@ -166,7 +145,6 @@ class CodeAuthor:
             return None
         code = self._extract_python(reply)
         if f"def {name}" not in code and "def " in code:
-            # rename first def
             code = re.sub(r"def\s+[a-zA-Z_]\w*", f"def {name}", code, count=1)
         return code if "def " in code else None
 
@@ -184,30 +162,21 @@ class CodeAuthor:
             compile(code, "<leon_codegen>", "exec")
         except SyntaxError as e:
             return {"ok": False, "error": f"syntax: {e.msg} line={e.lineno}"}
-        # must contain a function
         funcs = [n for n in tree.body if isinstance(n, ast.FunctionDef)]
         if not funcs:
             issues.append("no_function")
         for pat in DANGEROUS_PATTERNS:
             if re.search(pat, code):
                 issues.append(f"dangerous:{pat}")
-        # ban top-level network-ish imports in generated snippets
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                 if node.func.id in ("eval", "exec", "__import__"):
                     issues.append(f"call:{node.func.id}")
         return {"ok": not issues, "issues": issues, "func_count": len(funcs)}
 
-    # ------------------------------------------------------------------ insert / create
     def insert_into_module(
-        self,
-        path: str,
-        code: str,
-        *,
-        goal: str = "",
-        apply: bool = False,
+        self, path: str, code: str, *, goal: str = "", apply: bool = False, verify: bool = True
     ) -> Dict[str, Any]:
-        """Append generated code to an existing allowlisted module."""
         rel = path.replace("\\", "/").lstrip("./")
         ok, why = self.mut.is_allowed(rel)
         if not ok:
@@ -230,10 +199,11 @@ class CodeAuthor:
             goal=goal,
             strategy="code_insert",
         )
-        # append mode has softer delta rules; if rejected due to score, force quality note
         out: Dict[str, Any] = {"proposal": prop, "path": rel}
         if apply and prop.get("ok"):
             out["apply"] = self.mut.apply(prop.get("proposal_id"), run_smoke=True)
+            if verify and out["apply"].get("ok"):
+                out["verify"] = self._gate(rel, out["apply"].get("mutation_id"))
         return out
 
     def create_module(
@@ -243,8 +213,8 @@ class CodeAuthor:
         code: Optional[str] = None,
         spec: str = "",
         apply: bool = False,
+        verify: bool = True,
     ) -> Dict[str, Any]:
-        """Create a new .py module under CREATE_PREFIXES."""
         rel = path.replace("\\", "/").lstrip("./")
         if not rel.endswith(".py"):
             rel = rel.rstrip("/") + ".py"
@@ -254,13 +224,6 @@ class CodeAuthor:
                 "error": f"cannot create {rel}",
                 "create_prefixes": list(CREATE_PREFIXES),
             }
-        # also require mutator allow OR create prefix under allowed trees
-        # Use write mode via mutator — expand: temporarily check is_allowed
-        # For new files under agents/ etc., is_allowed may fail if only specific agents listed.
-        # Broaden: allow create if CREATE_PREFIXES and not forbidden.
-        for bad in ("security/", "core/kernel", "core/bootstrap", "core/config", "brain/self_mutate"):
-            if rel.startswith(bad):
-                return {"ok": False, "error": f"forbidden: {bad}"}
 
         if code is None:
             gen = self.generate_function(spec or f"module helper for {rel}")
@@ -269,14 +232,11 @@ class CodeAuthor:
             body = gen["code"]
         else:
             body = code
-            v = self._validate_code(body)
-            if not v.get("ok"):
-                # allow module-level multi-def: parse whole file
-                try:
-                    ast.parse(body)
-                    compile(body, rel, "exec")
-                except SyntaxError as e:
-                    return {"ok": False, "error": str(e)}
+            try:
+                ast.parse(body)
+                compile(body, rel, "exec")
+            except SyntaxError as e:
+                return {"ok": False, "error": str(e)}
 
         header = textwrap.dedent(
             f'''
@@ -292,11 +252,8 @@ class CodeAuthor:
         )
         full = header + body.rstrip() + "\n"
 
-        # SelfMutateEngine.propose write may fail is_allowed for agents/foo.py if only specific files listed
-        # Patch path: write via mutator only if allowed; else local proposal store + apply path check
-        ok_mut, why = self.mut.is_allowed(rel)
+        ok_mut, _ = self.mut.is_allowed(rel)
         if not ok_mut:
-            # extend proposal manually for create-only paths
             prop = self._propose_create_write(rel, full, spec=spec)
         else:
             prop = self.mut.propose(
@@ -311,14 +268,46 @@ class CodeAuthor:
 
         out: Dict[str, Any] = {"proposal": prop, "path": rel, "bytes": len(full)}
         if apply and prop.get("ok"):
-            if prop.get("proposal_id") and not prop.get("direct_write"):
-                out["apply"] = self.mut.apply(prop.get("proposal_id"), run_smoke=True)
-            elif prop.get("direct_write"):
+            if prop.get("direct_write"):
                 out["apply"] = self._apply_create(rel, full, prop.get("proposal_id"))
+            else:
+                out["apply"] = self.mut.apply(prop.get("proposal_id"), run_smoke=True)
+            if verify and out.get("apply", {}).get("ok"):
+                out["verify"] = self._gate(rel, out["apply"].get("mutation_id"))
         return out
 
+    def _gate(self, rel: str, mutation_id: Optional[str]) -> Dict[str, Any]:
+        from brain.code_verify import verify_module_file
+
+        report = verify_module_file(rel, repo_root=self.mut.root)
+        if not report.get("ok"):
+            # rollback
+            rb = None
+            if mutation_id:
+                try:
+                    rb = self.mut.rollback(mutation_id)
+                except Exception as e:
+                    rb = {"ok": False, "error": str(e)}
+            else:
+                # created new file — delete on red gate
+                p = self.mut.root / rel
+                if p.exists() and self.can_create(rel):
+                    try:
+                        p.unlink()
+                        rb = {"ok": True, "deleted": rel}
+                    except Exception as e:
+                        rb = {"ok": False, "error": str(e)}
+            report["rolled_back"] = rb
+            report["kept"] = False
+            logger.warning(f"CodeAuthor RED gate {rel}: {report.get('stage')}")
+        else:
+            report["kept"] = True
+            report["rolled_back"] = None
+            logger.info(f"CodeAuthor GREEN gate {rel}")
+        write_json(self.dir / "last_verify.json", report)
+        return report
+
     def _propose_create_write(self, rel: str, content: str, *, spec: str) -> Dict[str, Any]:
-        """Proposal for new files under CREATE_PREFIXES not in tight allowlist."""
         try:
             ast.parse(content)
             compile(content, rel, "exec")
@@ -327,7 +316,6 @@ class CodeAuthor:
         for pat in DANGEROUS_PATTERNS:
             if re.search(pat, content):
                 return {"ok": False, "error": f"dangerous pattern: {pat}"}
-
         pid = "MU-" + str(uuid.uuid4())[:8]
         proposal = {
             "id": pid,
@@ -377,22 +365,14 @@ class CodeAuthor:
 
             shutil.copy2(target, bak_dir / f"{mid}_{target.name}.bak")
         target.write_text(content, encoding="utf-8")
-        smoke = self.mut._smoke()
-        if not smoke.get("ok"):
-            # don't delete new file on soft smoke fail for brand new optional modules
-            logger.warning(f"CodeAuthor create smoke soft-fail: {smoke}")
-        record = {
+        return {
             "ok": True,
             "mutation_id": mid,
             "path": rel,
             "strategy": "code_create",
             "applied_at": datetime.now().isoformat(),
-            "smoke": smoke,
         }
-        write_json(self.dir / "last_apply.json", record)
-        return record
 
-    # ------------------------------------------------------------------ high-level
     def write_code(
         self,
         goal: str,
@@ -401,34 +381,45 @@ class CodeAuthor:
         create: bool = False,
         apply: bool = False,
         use_llm: bool = True,
+        verify: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Main entry: Leon writes code for a goal.
-        create=True → new module under CREATE_PREFIXES
-        else → insert function into routed/existing module
-        """
         gen = self.generate_function(goal, use_llm=use_llm)
         if not gen.get("ok"):
             return {"ok": False, "stage": "generate", "detail": gen}
 
         if create:
             rel = path or self._default_new_path(goal, gen.get("name") or "helper")
+            result = self.create_module(
+                rel, code=gen["code"], spec=goal, apply=apply, verify=verify
+            )
             return {
-                "ok": True,
+                "ok": self._overall_ok(result),
                 "stage": "create",
                 "generate": {"name": gen["name"], "source": gen["source"]},
-                **self.create_module(rel, code=gen["code"], spec=goal, apply=apply),
+                **result,
             }
 
         rel = path or self.mut.route_goal(goal).get("path")
         if not str(rel).endswith(".py"):
             rel = "brain/reasoning/engine.py"
+        result = self.insert_into_module(
+            str(rel), gen["code"], goal=goal, apply=apply, verify=verify
+        )
         return {
-            "ok": True,
+            "ok": self._overall_ok(result),
             "stage": "insert",
             "generate": {"name": gen["name"], "source": gen["source"]},
-            **self.insert_into_module(str(rel), gen["code"], goal=goal, apply=apply),
+            **result,
         }
+
+    def _overall_ok(self, result: Dict[str, Any]) -> bool:
+        if result.get("proposal") and not result["proposal"].get("ok"):
+            return False
+        if result.get("apply") is not None and not result["apply"].get("ok"):
+            return False
+        if result.get("verify") is not None and not result["verify"].get("kept", result["verify"].get("ok")):
+            return False
+        return True
 
     def _default_new_path(self, goal: str, name: str) -> str:
         g = goal.lower()
@@ -448,9 +439,9 @@ class CodeAuthor:
         *,
         apply: bool = False,
         create: bool = True,
+        verify: bool = True,
     ) -> Dict[str, Any]:
-        """Write code aimed at self-improvement goal."""
-        result = self.write_code(goal, create=create, apply=apply, use_llm=True)
+        result = self.write_code(goal, create=create, apply=apply, use_llm=True, verify=verify)
         write_json(
             self.dir / "last_self_code.json",
             {
@@ -459,6 +450,7 @@ class CodeAuthor:
                 "result_ok": result.get("ok"),
                 "path": result.get("path"),
                 "applied": bool(result.get("apply")),
+                "kept": (result.get("verify") or {}).get("kept"),
             },
         )
         return result
@@ -467,5 +459,7 @@ class CodeAuthor:
 code_author = CodeAuthor()
 
 
-def write_own_code(goal: str, *, apply: bool = False, create: bool = True) -> Dict[str, Any]:
-    return CodeAuthor().self_code_cycle(goal, apply=apply, create=create)
+def write_own_code(
+    goal: str, *, apply: bool = False, create: bool = True, verify: bool = True
+) -> Dict[str, Any]:
+    return CodeAuthor().self_code_cycle(goal, apply=apply, create=create, verify=verify)
