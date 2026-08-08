@@ -106,9 +106,19 @@ def parse_args():
     idesc.add_argument("path")
     idesc.add_argument("--prompt", default="Bu şəkli qısa və dəqiq təsvir et.")
     idesc.add_argument("--json", action="store_true")
+    iund = img_sub.add_parser("understand")
+    iund.add_argument("path")
+    iund.add_argument("--question", default=None)
+    iund.add_argument("--no-vlm", action="store_true")
+    iund.add_argument("--inject", action="store_true", help="Summary-ni FactStore-a yaz")
+    iund.add_argument("--json", action="store_true")
     igen = img_sub.add_parser("generate")
     igen.add_argument("--prompt", default="leon abstract")
-    igen.add_argument("--style", default="gradient", choices=["gradient", "noise", "shapes", "grid", "waves"])
+    igen.add_argument(
+        "--style",
+        default="auto",
+        choices=["auto", "gradient", "noise", "shapes", "grid", "waves", "scene"],
+    )
     igen.add_argument("--width", type=int, default=512)
     igen.add_argument("--height", type=int, default=512)
     igen.add_argument("--seed", type=int, default=None)
@@ -368,15 +378,24 @@ class CLIController:
         if cmd == "process":
             from multimodal.image_ops import process_image
 
-            out = process_image(
-                args.path, op=args.op, width=args.width, height=args.height
-            )
+            out = process_image(args.path, op=args.op, width=args.width, height=args.height)
             print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
             return
         if cmd == "describe":
             from multimodal.vision import describe_image
 
             out = describe_image(args.path, prompt=args.prompt)
+            print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
+            return
+        if cmd == "understand":
+            from multimodal.understand import understand_image
+
+            out = understand_image(
+                args.path,
+                question=args.question,
+                use_vlm=not args.no_vlm,
+                inject_facts=args.inject,
+            )
             print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
             return
         if cmd == "generate":
@@ -391,7 +410,7 @@ class CLIController:
             )
             print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
             return
-        print("image status|info|process|describe|generate")
+        print("image status|info|process|describe|understand|generate")
 
     def cmd_teach(self, args):
         from curriculum import CurriculumEngine
