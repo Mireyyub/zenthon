@@ -85,7 +85,21 @@ def _encode_image(path: str | Path) -> str:
     p = Path(path).expanduser().resolve()
     if not p.exists():
         raise FileNotFoundError(str(p))
-    return base64.b64encode(p.read_bytes()).decode("ascii")
+    # downscale large images for VLM speed
+    try:
+        from PIL import Image
+        import io
+
+        with Image.open(p) as im:
+            im = im.convert("RGB")
+            max_side = 768
+            if max(im.size) > max_side:
+                im.thumbnail((max_side, max_side))
+            buf = io.BytesIO()
+            im.save(buf, format="JPEG", quality=85)
+            return base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return base64.b64encode(p.read_bytes()).decode("ascii")
 
 
 def describe_image(
@@ -93,7 +107,6 @@ def describe_image(
     prompt: str = "Bu şəkli qısa və dəqiq təsvir et. Obyektlər, rənglər, səhnə.",
     model: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Ollama /api/generate with images=[b64]."""
     import urllib.request
 
     status = vision_available()

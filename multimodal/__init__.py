@@ -1,15 +1,11 @@
 """
-Leon multimodal – image processing + optional VLM describe + procedural generation.
-
-Honest limits:
-- Full photoreal generation requires external models (not claimed).
-- Vision describe needs Ollama vision model (e.g. llava, moondream).
-- Classic ops work with Pillow when installed.
+Leon multimodal – image processing, understanding, procedural generation.
 """
 
 from multimodal.image_ops import image_info, process_image, list_supported
 from multimodal.vision import describe_image, vision_available
 from multimodal.generate import generate_image, generate_card
+from multimodal.understand import understand_image, local_analyze
 
 __all__ = [
     "image_info",
@@ -19,4 +15,6 @@ __all__ = [
     "vision_available",
     "generate_image",
     "generate_card",
+    "understand_image",
+    "local_analyze",
 ]
