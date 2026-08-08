@@ -1,0 +1,8 @@
+{
+  "volume": "04",
+  "title": "Math Foundations",
+  "version": "1.0.0",
+  "lessons": ["000012", "000013", "000014"],
+  "target_concepts": ["Kəmiyyət", "Bərabərlik", "Müqayisə", "Sıfır"],
+  "depends_on": ["01", "03"]
+}

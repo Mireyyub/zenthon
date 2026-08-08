@@ -1,0 +1,6 @@
+{"id":"s01","instruction":"İnsan agent ola bilərmi?","output":"Bəli.","lesson":"000018","tags":["agent"]}
+{"id":"s02","instruction":"Daş normalda agentdirmi?","output":"Xeyr.","lesson":"000018","tags":["agent"]}
+{"id":"s03","instruction":"Niyyət məqsədlə bağlıdırmı?","output":"Bəli.","lesson":"000019","tags":["intent"]}
+{"id":"s04","instruction":"Əməkdaşlıq birgə məqsəd tələb edirmi?","output":"Bəli.","lesson":"000020","tags":["coop"]}
+{"id":"s05","instruction":"Zərər vermək əməkdaşlıqdır mı?","output":"Xeyr.","lesson":"000020","tags":["coop"]}
+{"id":"s06","instruction":"Leon agent ola bilərmi?","output":"Bəli.","lesson":"000018","tags":["agent"]}

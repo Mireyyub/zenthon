@@ -1,0 +1,8 @@
+{
+  "volume": "05",
+  "title": "Language Foundations",
+  "version": "1.0.0",
+  "lessons": ["000015", "000016", "000017"],
+  "target_concepts": ["Söz", "Cümlə", "Məna", "Sual"],
+  "depends_on": ["01"]
+}

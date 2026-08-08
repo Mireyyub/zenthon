@@ -1,0 +1,6 @@
+{"id":"l01","instruction":"Alma sözdürmü?","output":"Bəli.","lesson":"000015","tags":["word"]}
+{"id":"l02","instruction":"Daş mövcuddur cümlədirmi?","output":"Bəli.","lesson":"000016","tags":["sentence"]}
+{"id":"l03","instruction":"Sual cavab tələb edən forma dırmı?","output":"Bəli.","lesson":"000017","tags":["meaning"]}
+{"id":"l04","instruction":"Məna kontekstdən asılı ola bilərmi?","output":"Bəli.","lesson":"000017","tags":["meaning"]}
+{"id":"l05","instruction":"Xeyr sözdürmü?","output":"Bəli.","lesson":"000015","tags":["word"]}
+{"id":"l06","instruction":"Boş səs həmişə cümlədirmi?","output":"Xeyr.","lesson":"000016","tags":["sentence"]}

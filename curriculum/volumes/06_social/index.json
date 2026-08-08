@@ -1,0 +1,8 @@
+{
+  "volume": "06",
+  "title": "Social Basics",
+  "version": "1.0.0",
+  "lessons": ["000018", "000019", "000020"],
+  "target_concepts": ["Agent", "Niyyət", "Əməkdaşlıq", "Zərər"],
+  "depends_on": ["01", "05"]
+}

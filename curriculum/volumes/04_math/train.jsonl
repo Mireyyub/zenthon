@@ -1,0 +1,8 @@
+{"id":"m01","instruction":"Sıfır kəmiyyət ola bilərmi?","output":"Bəli.","lesson":"000012","tags":["quantity"]}
+{"id":"m02","instruction":"3 alma kəmiyyətdirmi?","output":"Bəli.","lesson":"000012","tags":["quantity"]}
+{"id":"m03","instruction":"5 = 5 doğrudurmu?","output":"Bəli.","lesson":"000013","tags":["equality"]}
+{"id":"m04","instruction":"2 = 3 doğrudurmu?","output":"Xeyr.","lesson":"000013","tags":["equality"]}
+{"id":"m05","instruction":"5 3-dən böyükdürmü?","output":"Bəli.","lesson":"000014","tags":["compare"]}
+{"id":"m06","instruction":"1 4-dən kiçikdirmi?","output":"Bəli.","lesson":"000014","tags":["compare"]}
+{"id":"m07","instruction":"Əgər a = b və b = c-dirsə a = c-dirmi?","output":"Bəli.","lesson":"000013","tags":["equality"]}
+{"id":"m08","instruction":"0 obyekt o deməkdirmi ki heç bir vahid yoxdur?","output":"Bəli.","lesson":"000012","tags":["quantity"]}
