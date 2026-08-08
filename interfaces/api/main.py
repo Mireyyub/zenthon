@@ -1,20 +1,20 @@
 """
-Leon FastAPI – cognitive endpoints (Faza 7).
+Leon FastAPI – cognitive + multimodal + crew endpoints.
 
     uvicorn interfaces.api.main:app --host 0.0.0.0 --port 8000
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 app = FastAPI(
     title="Leon AI Platform",
-    description="Cognitive API: think / teach / status / health",
-    version="0.7.0",
+    description="Cognitive API: think / cycle / crew / teach / media",
+    version="0.8.0",
 )
 
 
@@ -24,6 +24,22 @@ class ThinkRequest(BaseModel):
     mode: str = "auto"
     agent: Optional[str] = None
     use_session: bool = False
+
+
+class CycleRequest(BaseModel):
+    query: str
+    goal: Optional[str] = None
+    image_path: Optional[str] = None
+    audio_path: Optional[str] = None
+    agent: Optional[str] = None
+    learn: bool = True
+    reflect: bool = True
+
+
+class CrewRequest(BaseModel):
+    goal: str
+    mode: str = "sequential"
+    agents: List[str] = Field(default_factory=lambda: ["react", "coding"])
 
 
 class TeachRequest(BaseModel):
@@ -39,11 +55,34 @@ class ReasonRequest(BaseModel):
     use_brain: bool = True
 
 
+class MediaUnderstandRequest(BaseModel):
+    path: str
+    question: Optional[str] = None
+    use_vlm: bool = True
+
+
+class SpeechRequest(BaseModel):
+    path: Optional[str] = None
+    text: Optional[str] = None
+    mode: str = "stt"  # stt | tts
+
+
 @app.get("/")
 def root() -> Dict[str, Any]:
     return {
         "name": "Leon",
-        "endpoints": ["/health", "/status", "/think", "/reason", "/teach"],
+        "endpoints": [
+            "/health",
+            "/status",
+            "/think",
+            "/reason",
+            "/cycle",
+            "/crew",
+            "/teach",
+            "/volumes",
+            "/media/understand",
+            "/audio",
+        ],
     }
 
 
@@ -90,6 +129,35 @@ def think(req: ThinkRequest) -> Dict[str, Any]:
             "agent": result.get("agent"),
             "reasoning_mode": result.get("reasoning_mode"),
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/cycle")
+def cycle_endpoint(req: CycleRequest) -> Dict[str, Any]:
+    try:
+        from brain.cognitive_cycle import CognitiveCycle
+
+        return CognitiveCycle().run(
+            req.query,
+            goal=req.goal,
+            image_path=req.image_path,
+            audio_path=req.audio_path,
+            agent_type=req.agent,
+            learn=req.learn,
+            reflect=req.reflect,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/crew")
+def crew_endpoint(req: CrewRequest) -> Dict[str, Any]:
+    try:
+        from agents.crew import run_crew
+
+        tasks = [{"description": req.goal, "agent": a} for a in (req.agents or ["react"])]
+        return run_crew(req.goal, tasks, mode=req.mode)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -142,6 +210,38 @@ def volumes() -> Dict[str, Any]:
             except Exception as e:
                 items.append({"volume": vid, "error": str(e)})
         return {"volumes": items}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/media/understand")
+def media_understand(req: MediaUnderstandRequest) -> Dict[str, Any]:
+    try:
+        from multimodal.understand import understand_image
+
+        return understand_image(
+            req.path, question=req.question, use_vlm=req.use_vlm, inject_facts=False
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/audio")
+def audio_endpoint(req: SpeechRequest) -> Dict[str, Any]:
+    try:
+        from multimodal.audio import understand_speech, generate_speech, audio_available
+
+        if req.mode == "status":
+            return audio_available()
+        if req.mode == "stt":
+            if not req.path:
+                raise HTTPException(status_code=400, detail="path required for stt")
+            return understand_speech(req.path)
+        if req.mode == "tts":
+            return generate_speech(req.text or "")
+        return audio_available()
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -6,3 +6,7 @@
 {"id":"m06","instruction":"1 4-dən kiçikdirmi?","output":"Bəli.","lesson":"000014","tags":["compare"]}
 {"id":"m07","instruction":"Əgər a = b və b = c-dirsə a = c-dirmi?","output":"Bəli.","lesson":"000013","tags":["equality"]}
 {"id":"m08","instruction":"0 obyekt o deməkdirmi ki heç bir vahid yoxdur?","output":"Bəli.","lesson":"000012","tags":["quantity"]}
+{"id":"m09","instruction":"7 2-dən böyükdürmü?","output":"Bəli.","lesson":"000014","tags":["compare"]}
+{"id":"m10","instruction":"4 = 4 doğrudurmu?","output":"Bəli.","lesson":"000013","tags":["equality"]}
+{"id":"m11","instruction":"9 10-dan kiçikdirmi?","output":"Bəli.","lesson":"000014","tags":["compare"]}
+{"id":"m12","instruction":"Kəmiyyət ölçülə bilən xüsusiyyət ola bilərmi?","output":"Bəli.","lesson":"000012","tags":["quantity"]}

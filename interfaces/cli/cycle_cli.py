@@ -17,6 +17,7 @@ def run_cycle(args: Any) -> None:
         q,
         goal=getattr(args, "goal", None),
         image_path=getattr(args, "image", None),
+        audio_path=getattr(args, "audio", None),
         agent_type=getattr(args, "agent", None),
         allow_experimental_agent=bool(getattr(args, "experimental", False)),
         learn=not bool(getattr(args, "no_learn", False)),
@@ -29,6 +30,7 @@ def run_cycle(args: Any) -> None:
     print(f"Confidence : {out.get('confidence')}")
     print(f"Source     : {out.get('source')}")
     print(f"Cycle      : {out.get('cycle_id')}")
+    print(f"Modalities : {(out.get('perception') or {}).get('modalities')}")
     ref = out.get("reflection") or {}
     if ref:
         print(f"Reflect    : {ref.get('quality')} issues={ref.get('issues')}")

@@ -6,3 +6,7 @@
 {"id":"mm06","instruction":"STT danışığı mətnə çevirirmi?","output":"Bəli.","lesson":"000023","tags":["speech"]}
 {"id":"mm07","instruction":"Generasiya sintez ola bilərmi?","output":"Bəli.","lesson":"000024","tags":["generate"]}
 {"id":"mm08","instruction":"Generasiya həmişə real müşahidədirmi?","output":"Xeyr.","lesson":"000024","tags":["generate"]}
+{"id":"mm09","instruction":"TTS mətni danışığa çevirə bilərmi?","output":"Bəli.","lesson":"000023","tags":["speech"]}
+{"id":"mm10","instruction":"Thumbnail şəkil formasıdırmı?","output":"Bəli.","lesson":"000021","tags":["image"]}
+{"id":"mm11","instruction":"Müddət səs xüsusiyyəti ola bilərmi?","output":"Bəli.","lesson":"000022","tags":["sound"]}
+{"id":"mm12","instruction":"Şəkil generasiyası müşahidə ilə eynidirmi?","output":"Xeyr.","lesson":"000024","tags":["generate"]}

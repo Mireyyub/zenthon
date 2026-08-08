@@ -1,10 +1,6 @@
 """
-Leon Cognitive Cycle — AGI-oriented control loop (not AGI itself).
-
-PODALR:
-  Perceive → Orient → Decide → Act → Learn → Reflect
-
-Unifies ReasoningEngine, memory, agents, reflection, optional multimodal.
+Leon Cognitive Cycle — PODALR control loop (not AGI).
+Perceive (text/image/audio) → Orient → Decide → Act → Learn → Reflect
 """
 
 from __future__ import annotations
@@ -29,8 +25,6 @@ def _cycle_dir() -> Path:
 
 
 class CognitiveCycle:
-    """One general-purpose think-act-learn loop."""
-
     def __init__(self, name: str = "Leon"):
         self.name = name
 
@@ -40,6 +34,7 @@ class CognitiveCycle:
         *,
         goal: Optional[str] = None,
         image_path: Optional[str] = None,
+        audio_path: Optional[str] = None,
         agent_type: Optional[str] = None,
         allow_experimental_agent: bool = False,
         learn: bool = True,
@@ -49,11 +44,15 @@ class CognitiveCycle:
         cycle_id = datetime.now().strftime("%Y%m%d%H%M%S")
         trace: List[Dict[str, Any]] = []
 
-        # ----- Perceive -----
-        perception = self._perceive(query, image_path=image_path)
-        trace.append({"phase": "perceive", "ok": perception.get("ok", True)})
+        perception = self._perceive(query, image_path=image_path, audio_path=audio_path)
+        trace.append(
+            {
+                "phase": "perceive",
+                "ok": perception.get("ok", True),
+                "modalities": perception.get("modalities"),
+            }
+        )
 
-        # ----- Orient -----
         orientation = self._orient(query, perception, goal=goal)
         trace.append(
             {
@@ -63,7 +62,6 @@ class CognitiveCycle:
             }
         )
 
-        # ----- Decide (reason + optional re-reason after reflect) -----
         decision = None
         reflection = None
         attempts = 0
@@ -82,7 +80,6 @@ class CognitiveCycle:
             reflection = self._reflect(decision, orientation=orientation, goal=goal)
             if reflection.get("quality") in ("good", "acceptable"):
                 break
-            # escalate strategy once
             if mode == "auto":
                 mode = "cot"
             elif mode == "cot":
@@ -109,7 +106,6 @@ class CognitiveCycle:
             if decision is not None:
                 decision = self._apply_reflection(decision, reflection)
 
-        # ----- Act -----
         action = self._act(
             decision,
             agent_type=agent_type or orientation.get("suggested_agent"),
@@ -125,7 +121,6 @@ class CognitiveCycle:
                 }
             )
 
-        # ----- Learn -----
         learned = None
         if learn:
             learned = self._learn(query, decision, perception=perception)
@@ -159,8 +154,6 @@ class CognitiveCycle:
             "note": "Cognitive cycle prototype — not AGI",
             "at": datetime.now().isoformat(),
         }
-
-        # convenience aliases for CLI parity with reason/think
         report["answer"] = report["decision"].get("answer")
         report["conclusion"] = report["answer"]
         report["confidence"] = report["decision"].get("confidence")
@@ -174,34 +167,51 @@ class CognitiveCycle:
         )
         return report
 
-    # ------------------------------------------------------------------ phases
     def _perceive(
-        self, query: str, *, image_path: Optional[str]
+        self,
+        query: str,
+        *,
+        image_path: Optional[str],
+        audio_path: Optional[str],
     ) -> Dict[str, Any]:
-        out: Dict[str, Any] = {
-            "ok": True,
-            "text": query,
-            "image": None,
-            "modalities": ["text"],
-        }
-        if image_path:
-            try:
-                from multimodal.understand import understand_image
+        try:
+            from brain.perception.multimodal_fusion import MultimodalFusion
 
-                img = understand_image(image_path, use_vlm=True, inject_facts=False)
-                out["image"] = {
-                    "path": image_path,
-                    "summary": img.get("summary"),
-                    "ok": img.get("ok"),
-                    "palette": (img.get("local") or {}).get("palette_names"),
-                    "vlm_ok": bool((img.get("vlm") or {}).get("ok")),
-                }
-                out["modalities"].append("image")
-                if img.get("summary"):
-                    out["enriched_query"] = f"{query}\n[image] {img['summary'][:400]}"
-            except Exception as e:
-                out["image"] = {"ok": False, "error": str(e), "path": image_path}
-        return out
+            fused = MultimodalFusion().fuse(
+                text=query, image=image_path, audio=audio_path
+            )
+            return {
+                "ok": fused.get("ok", True),
+                "text": query,
+                "enriched_query": fused.get("fused_text") or query,
+                "modalities": fused.get("modalities") or ["text"],
+                "image": (fused.get("details") or {}).get("image"),
+                "audio": (fused.get("details") or {}).get("audio"),
+                "fusion": fused,
+            }
+        except Exception as e:
+            out: Dict[str, Any] = {
+                "ok": True,
+                "text": query,
+                "modalities": ["text"],
+                "fusion_error": str(e),
+            }
+            if image_path:
+                try:
+                    from multimodal.understand import understand_image
+
+                    img = understand_image(image_path, use_vlm=True, inject_facts=False)
+                    out["image"] = {
+                        "path": image_path,
+                        "summary": img.get("summary"),
+                        "ok": img.get("ok"),
+                    }
+                    out["modalities"].append("image")
+                    if img.get("summary"):
+                        out["enriched_query"] = f"{query}\n[image] {img['summary'][:400]}"
+                except Exception as ie:
+                    out["image"] = {"ok": False, "error": str(ie)}
+            return out
 
     def _orient(
         self,
@@ -224,12 +234,21 @@ class CognitiveCycle:
         elif any(k in q for k in ("axtar", "research", "web")):
             task_type = "research"
             suggested_agent = "research"
+        elif any(k in q for k in ("şəkil", "image", "foto", "görüntü")):
+            task_type = "vision"
+            suggested_agent = "vision"
+        elif any(k in q for k in ("səs", "audio", "danışıq", "speech", "tts", "stt")):
+            task_type = "speech"
+            suggested_agent = "voice"
         elif any(k in q for k in ("səbəb", "cause", "niyə", "why")):
             task_type = "causal"
             reasoning_mode = "cot"
         elif any(k in q for k in ("əgər", "if ", "→", "nəticə")):
             task_type = "inference"
             reasoning_mode = "cot"
+
+        if "image" in (perception.get("modalities") or []) and not suggested_agent:
+            suggested_agent = None  # reason on fused text first
 
         retrieval = []
         try:
@@ -246,7 +265,11 @@ class CognitiveCycle:
             "suggested_agent": suggested_agent,
             "inferred_goal": goal or (task_type if task_type != "qa" else None),
             "retrieval": [
-                {"source": c.get("source"), "score": c.get("score"), "content": str(c.get("content") or "")[:160]}
+                {
+                    "source": c.get("source"),
+                    "score": c.get("score"),
+                    "content": str(c.get("content") or "")[:160],
+                }
                 for c in retrieval[:6]
             ],
             "modalities": perception.get("modalities") or ["text"],
@@ -332,9 +355,15 @@ class CognitiveCycle:
             from agents.manager import agent_manager
 
             agent = agent_manager.create(
-                agent_type, allow_experimental=allow_experimental or agent_type in ("react", "coding")
+                agent_type,
+                allow_experimental=allow_experimental
+                or agent_type in ("react", "coding", "vision", "voice"),
             )
-            task = (decision or {}).get("conclusion") or (decision or {}).get("answer") or query
+            task = (
+                (decision or {}).get("conclusion")
+                or (decision or {}).get("answer")
+                or query
+            )
             res = agent_manager.run(agent.id, str(task))
             return {
                 "type": agent_type,
