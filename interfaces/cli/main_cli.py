@@ -1,4 +1,4 @@
-"""Leon CLI – health + omniverse (Faza 8)."""
+"""Leon CLI – cognitive + omniverse + image."""
 
 import argparse
 import sys
@@ -89,6 +89,30 @@ def parse_args():
     ova.add_argument("question", type=str)
     ova.add_argument("--json", action="store_true")
     ov_sub.add_parser("inject")
+
+    img = sub.add_parser("image", help="Multimodal image ops")
+    img_sub = img.add_subparsers(dest="img_cmd")
+    img_sub.add_parser("status")
+    ii = img_sub.add_parser("info")
+    ii.add_argument("path")
+    ii.add_argument("--json", action="store_true")
+    ip = img_sub.add_parser("process")
+    ip.add_argument("path")
+    ip.add_argument("--op", default="thumbnail")
+    ip.add_argument("--width", type=int, default=256)
+    ip.add_argument("--height", type=int, default=256)
+    ip.add_argument("--json", action="store_true")
+    idesc = img_sub.add_parser("describe")
+    idesc.add_argument("path")
+    idesc.add_argument("--prompt", default="Bu şəkli qısa və dəqiq təsvir et.")
+    idesc.add_argument("--json", action="store_true")
+    igen = img_sub.add_parser("generate")
+    igen.add_argument("--prompt", default="leon abstract")
+    igen.add_argument("--style", default="gradient", choices=["gradient", "noise", "shapes", "grid", "waves"])
+    igen.add_argument("--width", type=int, default=512)
+    igen.add_argument("--height", type=int, default=512)
+    igen.add_argument("--seed", type=int, default=None)
+    igen.add_argument("--json", action="store_true")
 
     teach_p = sub.add_parser("teach")
     teach_p.add_argument("lesson_id", nargs="?", default="000001")
@@ -209,7 +233,13 @@ class CLIController:
             rec = eng.validate_record(args.reject, accept=False)
             print(rec.to_dict() if rec else {"error": "not found"})
             return
-        print(json.dumps({"quarantine": eng.quarantine_list(), "pending": eng.pending_list()}, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {"quarantine": eng.quarantine_list(), "pending": eng.pending_list()},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
 
     def cmd_agent(self, args):
         from agents.manager import agent_manager
@@ -227,7 +257,14 @@ class CLIController:
         )
         res = agent_manager.run(agent.id, args.task)
         if args.json:
-            print(json.dumps({"success": res.success, "output": res.output, "error": res.error}, ensure_ascii=False, indent=2, default=str))
+            print(
+                json.dumps(
+                    {"success": res.success, "output": res.output, "error": res.error},
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                )
+            )
             return
         print(f"Success: {res.success}\nOutput: {res.output}")
 
@@ -237,7 +274,11 @@ class CLIController:
         p = Planner()
         cmd = args.plan_cmd
         if cmd == "create":
-            plan = curriculum_learn_plan(args.curriculum) if args.curriculum else p.create(goal=args.goal)
+            plan = (
+                curriculum_learn_plan(args.curriculum)
+                if args.curriculum
+                else p.create(goal=args.goal)
+            )
             if args.json:
                 print(json.dumps(plan.to_dict(), ensure_ascii=False, indent=2, default=str))
             else:
@@ -303,6 +344,54 @@ class CLIController:
             print(f"Objects   : {result.get('scene_object_count')}")
             return
         print("omniverse status|demo|sync|inject|ask")
+
+    def cmd_image(self, args):
+        cmd = args.img_cmd
+        if cmd == "status" or cmd is None:
+            from multimodal.image_ops import list_supported
+            from multimodal.vision import vision_available
+
+            print(
+                json.dumps(
+                    {"pillow": list_supported(), "vision": vision_available()},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return
+        if cmd == "info":
+            from multimodal.image_ops import image_info
+
+            out = image_info(args.path)
+            print(json.dumps(out, ensure_ascii=False, indent=2) if args.json else out)
+            return
+        if cmd == "process":
+            from multimodal.image_ops import process_image
+
+            out = process_image(
+                args.path, op=args.op, width=args.width, height=args.height
+            )
+            print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
+            return
+        if cmd == "describe":
+            from multimodal.vision import describe_image
+
+            out = describe_image(args.path, prompt=args.prompt)
+            print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
+            return
+        if cmd == "generate":
+            from multimodal.generate import generate_image
+
+            out = generate_image(
+                prompt=args.prompt,
+                style=args.style,
+                width=args.width,
+                height=args.height,
+                seed=args.seed,
+            )
+            print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
+            return
+        print("image status|info|process|describe|generate")
 
     def cmd_teach(self, args):
         from curriculum import CurriculumEngine
@@ -376,6 +465,9 @@ def main():
             return
         if cmd == "omniverse":
             ctrl.cmd_omniverse(args)
+            return
+        if cmd == "image":
+            ctrl.cmd_image(args)
             return
         mapping = {
             "start": lambda: ctrl.cmd_start(args),
