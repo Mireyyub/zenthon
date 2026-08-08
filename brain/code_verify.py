@@ -2,19 +2,16 @@
 Post-codegen verification gate for Leon.
 
 Pipeline:
-  compile → static danger scan → import → call public helpers → smoke → (optional) curriculum snapshot
-
-On failure caller should rollback applied mutation.
+  compile → static danger scan → import → call public helpers → smoke
 """
 
 from __future__ import annotations
 
 import ast
-import importlib
+import importlib.util
 import inspect
 import re
 import sys
-import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -63,7 +60,6 @@ def verify_module_file(rel_path: str, repo_root: Optional[Path] = None) -> Dict[
         return static
 
     mod_name = rel_path.replace("/", ".").removesuffix(".py")
-    # isolate: load via importlib from path
     import_ok = False
     import_err = None
     module = None
@@ -71,7 +67,6 @@ def verify_module_file(rel_path: str, repo_root: Optional[Path] = None) -> Dict[
         spec = importlib.util.spec_from_file_location(mod_name, path)
         if spec and spec.loader:
             module = importlib.util.module_from_spec(spec)
-            # don't register permanently unless needed
             sys.modules[mod_name + "._leon_verify"] = module
             spec.loader.exec_module(module)
             import_ok = True
@@ -88,7 +83,6 @@ def verify_module_file(rel_path: str, repo_root: Optional[Path] = None) -> Dict[
         }
 
     call_results = []
-    # try calling top-level functions with no required args
     for name, fn in list(vars(module).items()):
         if name.startswith("_"):
             continue
@@ -112,16 +106,10 @@ def verify_module_file(rel_path: str, repo_root: Optional[Path] = None) -> Dict[
             call_results.append({"fn": name, "ok": True, "type": type(out).__name__})
         except Exception as e:
             call_results.append(
-                {
-                    "fn": name,
-                    "ok": False,
-                    "error": f"{type(e).__name__}: {e}",
-                }
+                {"fn": name, "ok": False, "error": f"{type(e).__name__}: {e}"}
             )
 
-    # soft: if any call crashed hard, still allow module if import worked and no call attempted
     hard_fail_calls = [c for c in call_results if not c.get("ok")]
-    # Only fail gate if ALL attempted calls failed and there was at least one attempt
     call_ok = True
     if call_results and len(hard_fail_calls) == len(call_results):
         call_ok = False

@@ -1,28 +1,16 @@
 """
-Leon Self-Improvement Engine (v2)
+Leon Self-Improvement Engine (v3)
 
-Closed loop:
-  diagnose → propose → apply → verify → (repeat until target)
-
-Enhancements:
-- Multi-round adaptive cycles with early stop
-- Weak-case topic clustering
-- Practice reasoning on failures after learning
-- Optional train.jsonl mutation bridge (SelfMutateEngine)
-- Trace reflection → knowledge
-- History-aware action prioritization
-- Graph is_a hints from category-style QAs
-
-Code mutation is optional and still gated by LEON_ALLOW_MUTATE.
-Default scope remains knowledge + curriculum + learning.
++ with_codegen: write helper module under green-gate (code_verify)
+  Only keeps code that passes compile/import/call/smoke.
 """
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 import json
 import re
 import uuid
@@ -51,7 +39,6 @@ class SelfImproveEngine:
         hist = read_json(self.dir / "history.json", default={"runs": []}) or {}
         self._history: List[Dict[str, Any]] = list(hist.get("runs") or [])
 
-    # ------------------------------------------------------------------ diagnose
     def diagnose(self, volumes: Optional[List[str]] = None) -> Dict[str, Any]:
         from curriculum import CurriculumEngine
 
@@ -88,9 +75,7 @@ class SelfImproveEngine:
                     )
 
         weak_traces = self._scan_traces(limit=40)
-        # also probe reason() on a sample of weak questions for live signal
         live_weak = self._live_probe(weak_cases[:8])
-
         learning_stats = {}
         try:
             from learning.engine import LearningEngine
@@ -142,16 +127,11 @@ class SelfImproveEngine:
         return "other"
 
     def _recommendations(
-        self,
-        severity: str,
-        avg: float,
-        weak: List[Dict],
-        topics: Counter,
+        self, severity: str, avg: float, weak: List[Dict], topics: Counter
     ) -> List[str]:
         recs = []
         if severity == "ok":
-            recs.append("Pass rate sağlamdır; yalnız monitoring.")
-            return recs
+            return ["Pass rate sağlamdır; yalnız monitoring."]
         if avg < 0.9:
             recs.append("Zəif volume-ları yenidən teach et.")
         if weak:
@@ -160,7 +140,7 @@ class SelfImproveEngine:
         if top:
             recs.append("Prioritet mövzular: " + ", ".join(f"{t}({n})" for t, n in top))
         if severity == "high":
-            recs.append("train.jsonl mutasiyası (mutate diagnose) nəzərdən keçir.")
+            recs.append("train.jsonl mutasiyası / optional codegen (green-gate).")
         return recs
 
     def _live_probe(self, cases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -179,9 +159,7 @@ class SelfImproveEngine:
                 r = eng.reason(q, use_brain=False)
                 ans = str(r.get("answer") or r.get("conclusion") or "")
                 exp = str(c.get("expected") or "")
-                ok = bool(exp) and (
-                    exp.lower() in ans.lower() or ans.lower() in exp.lower()
-                )
+                ok = bool(exp) and (exp.lower() in ans.lower() or ans.lower() in exp.lower())
                 out.append(
                     {
                         "question": q,
@@ -226,18 +204,16 @@ class SelfImproveEngine:
                 )
         return weak
 
-    # ------------------------------------------------------------------ propose
     def propose(
         self,
         diagnosis: Optional[Dict[str, Any]] = None,
         *,
         with_mutate: bool = False,
         with_practice: bool = True,
+        with_codegen: bool = False,
     ) -> Dict[str, Any]:
         diag = diagnosis or self.diagnose()
         actions: List[Dict[str, Any]] = []
-
-        # adaptive boost from history: if past teach helped, keep priority high
         hist_boost = self._history_boost()
 
         for e in diag.get("evals") or []:
@@ -254,7 +230,6 @@ class SelfImproveEngine:
                     }
                 )
 
-        # dedupe learn_qa by normalized question
         seen_q = set()
         for case in diag.get("weak_cases") or []:
             q, exp = case.get("question"), case.get("expected")
@@ -283,7 +258,6 @@ class SelfImproveEngine:
                         "priority": 4,
                     }
                 )
-            # category → graph hint
             if case.get("topic") == "category":
                 actions.append(
                     {
@@ -294,7 +268,6 @@ class SelfImproveEngine:
                     }
                 )
 
-        # reflect weak traces: if query looks like yes/no curriculum, skip; else store as pending note
         for tr in (diag.get("weak_traces") or [])[:10]:
             q = tr.get("query")
             if q:
@@ -310,11 +283,7 @@ class SelfImproveEngine:
 
         if diag.get("weak_cases"):
             actions.append(
-                {
-                    "type": "write_failure_dataset",
-                    "count": len(diag["weak_cases"]),
-                    "priority": 2,
-                }
+                {"type": "write_failure_dataset", "count": len(diag["weak_cases"]), "priority": 2}
             )
 
         if with_mutate and (diag.get("severity") in ("medium", "high") or diag.get("weak_cases")):
@@ -326,13 +295,24 @@ class SelfImproveEngine:
                 }
             )
 
+        if with_codegen and diag.get("severity") in ("medium", "high"):
+            topics = diag.get("topic_counts") or {}
+            top = sorted(topics.items(), key=lambda x: -x[1])[:1]
+            topic = top[0][0] if top else "reasoning"
+            actions.append(
+                {
+                    "type": "codegen_helper",
+                    "goal": (
+                        f"Helper to improve curriculum topic '{topic}': "
+                        f"normalize answers and map common synonyms for {topic} questions"
+                    ),
+                    "priority": 6,
+                }
+            )
+
         actions.append({"type": "save_state", "name": "self_improve", "priority": 1})
         actions.append(
-            {
-                "type": "verify",
-                "volumes": diag.get("volumes") or ["01"],
-                "priority": 0,
-            }
+            {"type": "verify", "volumes": diag.get("volumes") or ["01"], "priority": 0}
         )
 
         actions.sort(key=lambda a: -a.get("priority", 0))
@@ -345,12 +325,17 @@ class SelfImproveEngine:
             "recommendations": diag.get("recommendations"),
             "actions": actions,
             "action_count": len(actions),
-            "options": {"with_mutate": with_mutate, "with_practice": with_practice},
+            "options": {
+                "with_mutate": with_mutate,
+                "with_practice": with_practice,
+                "with_codegen": with_codegen,
+            },
             "safety": {
-                "code_rewrite": bool(with_mutate),
+                "code_rewrite": bool(with_mutate or with_codegen),
                 "scope": "knowledge+curriculum+learning+eval"
-                + ("+train_mutate" if with_mutate else ""),
-                "note": "Source mutation only via SelfMutate allowlist + LEON_ALLOW_MUTATE",
+                + ("+train_mutate" if with_mutate else "")
+                + ("+codegen_green" if with_codegen else ""),
+                "note": "Codegen kept only after green verify gate",
             },
         }
         write_json(self.dir / "last_proposal.json", proposal)
@@ -363,7 +348,6 @@ class SelfImproveEngine:
                 boost["teach_volume"] = boost.get("teach_volume", 0) + 1
         return boost
 
-    # ------------------------------------------------------------------ apply
     def apply(self, proposal: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         prop = proposal or read_json(self.dir / "last_proposal.json", default=None)
         if not prop:
@@ -374,7 +358,8 @@ class SelfImproveEngine:
         taught: List[str] = []
         practiced = 0
         mutated = None
-        vols_for_verify = prop.get("options", {})
+        codegen = None
+        vols_for_verify = None
 
         for action in prop.get("actions") or []:
             atype = action.get("type")
@@ -411,7 +396,6 @@ class SelfImproveEngine:
                         get_fact_store().add(content, source="self_improve", confidence=0.92)
                     except Exception:
                         pass
-                    # also remember in vector memory if available
                     try:
                         from memory import MemoryManager
 
@@ -447,10 +431,11 @@ class SelfImproveEngine:
                         }
                     )
                 elif atype == "graph_hint":
-                    ok = self._inject_graph_hint(action.get("question") or "", action.get("answer") or "")
+                    ok = self._inject_graph_hint(
+                        action.get("question") or "", action.get("answer") or ""
+                    )
                     results.append({"type": atype, "ok": ok})
                 elif atype == "reflect_trace":
-                    # store low-conf query as pending learning note (not auto-validated)
                     try:
                         from learning.engine import LearningEngine
 
@@ -484,6 +469,29 @@ class SelfImproveEngine:
                         results.append({"type": atype, "ok": True, "detail": mutated})
                     except Exception as e:
                         results.append({"type": atype, "ok": False, "error": str(e)})
+                elif atype == "codegen_helper":
+                    try:
+                        from brain.self_code import CodeAuthor
+
+                        author = CodeAuthor()
+                        goal = action.get("goal") or "curriculum answer normalizer helper"
+                        # apply only if mutate gate on; always verify
+                        apply_code = author.mut.mutation_enabled()
+                        cg = author.write_code(
+                            goal, create=True, apply=apply_code, use_llm=True, verify=True
+                        )
+                        codegen = cg
+                        results.append(
+                            {
+                                "type": atype,
+                                "ok": bool(cg.get("ok")),
+                                "path": cg.get("path"),
+                                "kept": (cg.get("verify") or {}).get("kept"),
+                                "applied": apply_code,
+                            }
+                        )
+                    except Exception as e:
+                        results.append({"type": atype, "ok": False, "error": str(e)})
                 elif atype == "write_failure_dataset":
                     path = self._write_failure_dataset()
                     results.append({"type": atype, "ok": True, "path": str(path)})
@@ -512,6 +520,7 @@ class SelfImproveEngine:
             "taught_volumes": taught,
             "practiced": practiced,
             "mutate": mutated,
+            "codegen": codegen,
             "verify": verify,
             "improved": bool(after > before) or learned > 0,
             "delta": round(float(after) - float(before), 3),
@@ -524,13 +533,13 @@ class SelfImproveEngine:
                 "delta": report["delta"],
                 "at": report["applied_at"],
                 "learned": learned,
+                "codegen_kept": bool((codegen or {}).get("ok")),
             }
         )
         write_json(self.dir / "history.json", {"runs": self._history[-50:]})
         return report
 
     def _inject_graph_hint(self, question: str, answer: str) -> bool:
-        """Best-effort: 'X hansı kateqoriya' → X is_a Category."""
         try:
             from knowledge.registry import get_graph
 
@@ -573,7 +582,6 @@ class SelfImproveEngine:
         path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
         return path
 
-    # ------------------------------------------------------------------ verify
     def verify(self, volumes: Optional[List[str]] = None) -> Dict[str, Any]:
         from curriculum import CurriculumEngine
 
@@ -604,7 +612,6 @@ class SelfImproveEngine:
             "timestamp": datetime.now().isoformat(),
         }
 
-    # ------------------------------------------------------------------ cycles
     def run_cycle(
         self,
         volumes: Optional[List[str]] = None,
@@ -612,9 +619,15 @@ class SelfImproveEngine:
         apply_changes: bool = True,
         with_mutate: bool = False,
         with_practice: bool = True,
+        with_codegen: bool = False,
     ) -> Dict[str, Any]:
         diag = self.diagnose(volumes=volumes)
-        prop = self.propose(diag, with_mutate=with_mutate, with_practice=with_practice)
+        prop = self.propose(
+            diag,
+            with_mutate=with_mutate,
+            with_practice=with_practice,
+            with_codegen=with_codegen,
+        )
         if not apply_changes:
             return {
                 "diagnosis": {
@@ -653,9 +666,9 @@ class SelfImproveEngine:
         rounds: int = 3,
         target: float = 0.95,
         with_mutate: bool = False,
+        with_codegen: bool = False,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """Multi-round improve until target pass rate or max rounds."""
         rounds = max(1, min(int(rounds), 8))
         target = max(0.0, min(float(target), 1.0))
         trail: List[Dict[str, Any]] = []
@@ -669,6 +682,7 @@ class SelfImproveEngine:
                 apply_changes=not dry_run,
                 with_mutate=with_mutate,
                 with_practice=True,
+                with_codegen=with_codegen,
             )
             if dry_run:
                 return {"rounds": [cycle], "stopped": "dry_run", "target": target}
@@ -681,13 +695,15 @@ class SelfImproveEngine:
                     "pass_rate": rate,
                     "delta": (cycle.get("apply") or {}).get("delta"),
                     "learned": (cycle.get("apply") or {}).get("learned_qa"),
+                    "codegen_kept": bool(
+                        ((cycle.get("apply") or {}).get("codegen") or {}).get("ok")
+                    ),
                     "proposal_id": cycle.get("proposal_id"),
                 }
             )
             final = cycle
             if rate >= target:
                 break
-            # no progress stop
             if i > 0 and trail[-1].get("delta") == 0 and trail[-2].get("delta") == 0:
                 break
 
@@ -698,6 +714,7 @@ class SelfImproveEngine:
             "final_pass_rate": trail[-1]["pass_rate"] if trail else None,
             "reached_target": bool(trail and trail[-1]["pass_rate"] >= target),
             "last_cycle": final,
+            "options": {"with_mutate": with_mutate, "with_codegen": with_codegen},
         }
         write_json(self.dir / "last_auto.json", summary)
         return summary
@@ -721,9 +738,13 @@ def improve(
     *,
     dry_run: bool = False,
     with_mutate: bool = False,
+    with_codegen: bool = False,
 ) -> Dict[str, Any]:
     return SelfImproveEngine().run_cycle(
-        volumes=volumes, apply_changes=not dry_run, with_mutate=with_mutate
+        volumes=volumes,
+        apply_changes=not dry_run,
+        with_mutate=with_mutate,
+        with_codegen=with_codegen,
     )
 
 
@@ -733,6 +754,7 @@ def improve_auto(
     rounds: int = 3,
     target: float = 0.95,
     with_mutate: bool = False,
+    with_codegen: bool = False,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
     return SelfImproveEngine().auto(
@@ -740,5 +762,6 @@ def improve_auto(
         rounds=rounds,
         target=target,
         with_mutate=with_mutate,
+        with_codegen=with_codegen,
         dry_run=dry_run,
     )
