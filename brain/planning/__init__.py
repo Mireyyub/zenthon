@@ -1,6 +1,13 @@
-"""Leon Planner (Faza 6)."""
+"""Planning package."""
 
+from brain.planning.planner import Planner, curriculum_learn_plan, self_improve_plan, planner
 from brain.planning.schema import Plan, PlanTask
-from brain.planning.planner import Planner, planner, curriculum_learn_plan
 
-__all__ = ["Plan", "PlanTask", "Planner", "planner", "curriculum_learn_plan"]
+__all__ = [
+    "Planner",
+    "Plan",
+    "PlanTask",
+    "curriculum_learn_plan",
+    "self_improve_plan",
+    "planner",
+]

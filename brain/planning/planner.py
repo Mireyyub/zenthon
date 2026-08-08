@@ -1,8 +1,6 @@
 """
-Minimal Planner (Faza 6).
-
-create / list / update / run / replan
-Dependency order: topological by depends_on.
+Minimal Planner – create / list / update / run / replan.
+Includes self_improve action.
 """
 
 from __future__ import annotations
@@ -10,7 +8,6 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import uuid
 
 from core.logger import logger
 from core.persistence import write_json, read_json
@@ -34,7 +31,6 @@ class Planner:
         self.dir.mkdir(parents=True, exist_ok=True)
         self._cache: Dict[str, Plan] = {}
 
-    # ---------- CRUD ----------
     def create(
         self,
         goal: str,
@@ -139,14 +135,10 @@ class Planner:
         write_json(self.dir / f"{plan.id}.json", plan.to_dict())
         self._cache[plan.id] = plan
 
-    # ---------- dependency / order ----------
     def ordered_tasks(self, plan: Plan) -> List[PlanTask]:
-        """Topological order; cycle → original order with warning."""
         by_id = {t.id: t for t in plan.tasks}
         pending = set(by_id)
-        done: List[str] = []
         result: List[PlanTask] = []
-        # Kahn-like
         while pending:
             ready = [
                 tid
@@ -158,12 +150,10 @@ class Planner:
                 for tid in list(pending):
                     result.append(by_id[tid])
                 break
-            # stable: sort by id
             ready.sort()
             for tid in ready:
                 pending.remove(tid)
                 result.append(by_id[tid])
-                done.append(tid)
         return result
 
     def _refresh_ready(self, plan: Plan) -> None:
@@ -188,7 +178,6 @@ class Planner:
         else:
             plan.status = "draft"
 
-    # ---------- execute ----------
     def run(self, plan_id: str, max_tasks: Optional[int] = None) -> Dict[str, Any]:
         plan = self.get(plan_id)
         if not plan:
@@ -204,7 +193,6 @@ class Planner:
                 break
             if task.status in ("done", "skipped"):
                 continue
-            # deps
             if any(
                 self._task_status(plan, d) not in ("done", "skipped")
                 for d in (task.depends_on or [])
@@ -227,7 +215,7 @@ class Planner:
             self._update_plan_status(plan)
             self.save(plan)
             if task.status == "failed":
-                break  # stop on failure; user may replan
+                break
 
         return {
             "plan_id": plan.id,
@@ -253,9 +241,9 @@ class Planner:
             from curriculum import CurriculumEngine
 
             eng = CurriculumEngine()
-            lesson_id = params.get("lesson_id", "000001")
-            volume_id = params.get("volume_id")
-            return eng.teach(lesson_id, volume_id=volume_id)
+            return eng.teach(
+                params.get("lesson_id", "000001"), volume_id=params.get("volume_id")
+            )
 
         if action == "teach_volume":
             from curriculum import CurriculumEngine
@@ -277,7 +265,9 @@ class Planner:
             from agents.manager import agent_manager
 
             atype = params.get("type", "react")
-            agent = agent_manager.create(atype, allow_experimental=params.get("experimental", False))
+            agent = agent_manager.create(
+                atype, allow_experimental=params.get("experimental", False)
+            )
             res = agent_manager.run(agent.id, params.get("task") or task.title)
             return {"success": res.success, "output": res.output, "error": res.error}
 
@@ -286,9 +276,19 @@ class Planner:
 
             return save_state(params.get("name", "plan"))
 
+        if action == "self_improve":
+            from brain.self_improve import improve
+
+            vols = params.get("volumes")
+            return improve(volumes=vols, dry_run=bool(params.get("dry_run", False)))
+
+        if action == "eval_volume":
+            from curriculum import CurriculumEngine
+
+            return CurriculumEngine().run_eval(params.get("volume_id", "01"))
+
         raise ValueError(f"unknown action: {action}")
 
-    # ---------- replan ----------
     def replan(
         self,
         plan_id: str,
@@ -300,19 +300,16 @@ class Planner:
         plan = self.get(plan_id)
         if not plan:
             return None
-
         if retry_failed:
             for t in plan.tasks:
                 if t.status == "failed":
                     t.status = "pending"
                     t.error = None
                     t.result = None
-
         for t in extra_tasks or []:
             td = dict(t)
             td.setdefault("id", new_task_id())
             plan.tasks.append(PlanTask.from_dict(td))
-
         plan.version += 1
         plan.metadata["last_replan"] = {
             "reason": reason,
@@ -323,18 +320,12 @@ class Planner:
         plan.status = "active"
         plan.updated_at = datetime.now().isoformat()
         self.save(plan)
-        logger.info(f"Planner: replan {plan.id} reason={reason} v={plan.version}")
         return plan
 
 
-# ---------- templates ----------
 def curriculum_learn_plan(volume_id: str = "01") -> Plan:
-    """«Öyrən Volume X» nümunə planı."""
     planner = Planner()
-    t1 = new_task_id()
-    t2 = new_task_id()
-    t3 = new_task_id()
-    t4 = new_task_id()
+    t1, t2, t3, t4 = new_task_id(), new_task_id(), new_task_id(), new_task_id()
     return planner.create(
         goal=f"Volume {volume_id} öyrən və qiymətləndir",
         metadata={"template": "curriculum_learn", "volume_id": volume_id},
@@ -364,6 +355,31 @@ def curriculum_learn_plan(volume_id: str = "01") -> Plan:
                 "title": "Retrieve foundation concepts",
                 "action": "retrieve",
                 "params": {"query": "obyekt varlıq", "top_k": 5},
+                "depends_on": [t1],
+            },
+        ],
+    )
+
+
+def self_improve_plan(volumes: Optional[List[str]] = None) -> Plan:
+    """Plan that runs Leon's self-improvement cycle."""
+    planner = Planner()
+    t1, t2 = new_task_id(), new_task_id()
+    return planner.create(
+        goal="Özünü qiymətləndir və bilik boşluqlarını bağla",
+        metadata={"template": "self_improve", "volumes": volumes or ["01", "02"]},
+        tasks=[
+            {
+                "id": t1,
+                "title": "Self-improve cycle",
+                "action": "self_improve",
+                "params": {"volumes": volumes or ["01", "02"]},
+            },
+            {
+                "id": t2,
+                "title": "Save after improve",
+                "action": "save_state",
+                "params": {"name": "post_self_improve"},
                 "depends_on": [t1],
             },
         ],
