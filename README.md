@@ -1,11 +1,11 @@
 # Leon AI Platform
 
-**Modul əsaslı kognitiv AI — yaddaş, curriculum, reasoning, agent, lokal LLM.**  
+**Modul əsaslı kognitiv AI — yaddaş, curriculum, reasoning, agent, özünü-təkmilləşdirmə, lokal LLM.**  
 Repo: https://github.com/Mireyyub/zenthon
 
-> Reallıq: bu **v0.x prototipdir**. Production AGI deyil. Aşağıdakılar **kodda olan** imkanlardır.
+> Reallıq: bu **v0.7 prototipdir**. Production AGI deyil. Aşağıdakılar **kodda olan** imkanlardır.
 
-**Arxitektura:** bax [`ARCHITECTURE.md`](ARCHITECTURE.md) · Legacy: [`LEGACY.md`](LEGACY.md)
+**Arxitektura:** [`ARCHITECTURE.md`](ARCHITECTURE.md) · Legacy: [`LEGACY.md`](LEGACY.md)
 
 ---
 
@@ -23,6 +23,10 @@ Repo: https://github.com/Mireyyub/zenthon
 | CLI + FastAPI + GUI | ✅ |
 | Omniverse bridge (stub/live) | ✅ |
 | Security allowlist + sandbox | ✅ |
+| SelfView (öz kodunu görür) | ✅ |
+| SelfImprove + green-gate codegen | ✅ |
+| Controlled self-mutate (`LEON_ALLOW_MUTATE`) | ✅ |
+| SystemLoop (system status/improve) | ✅ |
 | Experimental agents | ⚠️ |
 | Full multimodal / AGI | ❌ |
 
@@ -43,6 +47,7 @@ python zenthon_app.py
 python -m interfaces.cli.main_cli start
 python -m interfaces.cli.main_cli teach-volume 01
 python -m interfaces.cli.main_cli reason "Daş mövcuddurmu?"
+python -m interfaces.cli.main_cli system status
 python -m interfaces.cli.main_cli health
 ```
 
@@ -66,11 +71,12 @@ python -m interfaces.gui.main_gui
 CLI / GUI / FastAPI
   → BrainOrchestrator → ReasoningEngine
   → Curriculum / Facts / Graph / Memory
-  → Agents (react, coding) + Planner + Security
+  → Agents + Planner + Security
+  → SelfView / SelfImprove / SelfMutate (gated)
   → data/leon/
 ```
 
-`ThinkingBrain` yalnız LLM backend kimi daxili istifadə olunur — ictimai think API deyil.
+`ThinkingBrain` yalnız LLM backend kimi daxili istifadə olunur.
 
 ---
 
@@ -85,20 +91,34 @@ python -m interfaces.cli.main_cli agent react "vaxt neçədir?"
 python -m interfaces.cli.main_cli plan create --goal "öyrən" --curriculum 01
 python -m interfaces.cli.main_cli omniverse demo
 python -m interfaces.cli.main_cli health
+
+# özünü görmə
+python -m interfaces.cli.main_cli self body
+python -m interfaces.cli.main_cli self read --path brain/reasoning/engine.py --start 1
+
+# özünü təkmilləşdirmə
+python -m interfaces.cli.main_cli improve auto --volumes 01,02 --rounds 3
+python -m interfaces.cli.main_cli system improve --rounds 2
+python -m interfaces.cli.main_cli system smoke
+
+# mutasiya (diqqət: LEON_ALLOW_MUTATE=1)
+export LEON_ALLOW_MUTATE=1
+python -m interfaces.cli.main_cli mutate status
+python -m interfaces.cli.main_cli mutate write --goal "helper" --create --apply
 ```
 
-Env: `LEON_DATA_DIR`, `LEON_LLM_MODEL`, `LEON_OLLAMA_HOST`, `LEON_EMBED_MODEL`
+Env: `LEON_DATA_DIR`, `LEON_LLM_MODEL`, `LEON_OLLAMA_HOST`, `LEON_EMBED_MODEL`, `LEON_ALLOW_MUTATE`
 
 ---
 
 ## Test
 
 ```bash
-pytest tests/unit/test_facts_graph_learning.py tests/unit/test_security.py -q
+pytest tests/unit/test_facts_graph_learning.py tests/unit/test_security.py tests/unit/test_self_view.py -q
 python scripts/verify_phases_1_8.py
 bash scripts/ci_eval.sh
 ```
 
-GitHub: [Mireyyub](https://github.com/Mireyyub) · mireyyub@gmail.com
+GitHub: [Mireyyub](https://github.com/Mireyyub)
 
-*Leon – düşünən, öyrənən, yadda saxlayan prototip.*
+*Leon – düşünən, öyrənən, özünü görən prototip.*
