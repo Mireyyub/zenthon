@@ -1,0 +1,2 @@
+# Windows distributable build tools; install only while building the .exe package.
+pyinstaller>=6.0,<7.0

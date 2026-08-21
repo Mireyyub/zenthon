@@ -55,6 +55,22 @@ python scripts/install_desktop_linux.py --autostart
 
 İkinci əmr tətbiqi sistem menyusuna **Zenthon AI Platform** kimi əlavə edir və kompüterə daxil olarkən avtomatik başlatmanı aktivləşdirir. Qısayol və autostart qeydlərini silmək üçün `python scripts/install_desktop_linux.py --remove` işlədin.
 
+### Windows 11 masaüstü paketi
+
+Windows 11-də tətbiqi qrafik masaüstü proqramı kimi açmaq üçün:
+
+```powershell
+python run.py --gui
+```
+
+Yayım üçün `.exe` və quraşdırıcı yaratmaq yalnız Windows-da edilir. Əvvəlcə [NSIS](https://nsis.sourceforge.io/) quraşdırın, sonra PowerShell-dən aşağıdakı əmri icra edin:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -Installer
+```
+
+Nəticə `dist\Zenthon-Setup.exe` olur. Quraşdırıcı Start Menu və Desktop qısayolları yaradır, həmçinin istifadəçi Windows-a daxil olduqda tətbiqi avtomatik başladır. Silmək üçün Windows **Installed apps** bölməsindən `Zenthon AI Platform`-ı seçin.
+
 ```bash
 git clone https://github.com/Mireyyub/zenthon.git
 cd zenthon
