@@ -42,6 +42,12 @@ class CrewRequest(BaseModel):
     agents: List[str] = Field(default_factory=lambda: ["react", "coding"])
 
 
+class OrchestrateRequest(BaseModel):
+    task: str
+    agents: List[str] = Field(default_factory=lambda: ["react", "coding"])
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+
 class TeachRequest(BaseModel):
     lesson_id: Optional[str] = None
     volume_id: Optional[str] = "01"
@@ -78,6 +84,7 @@ def root() -> Dict[str, Any]:
             "/reason",
             "/cycle",
             "/crew",
+            "/orchestrate",
             "/teach",
             "/volumes",
             "/media/understand",
@@ -158,6 +165,17 @@ def crew_endpoint(req: CrewRequest) -> Dict[str, Any]:
 
         tasks = [{"description": req.goal, "agent": a} for a in (req.agents or ["react"])]
         return run_crew(req.goal, tasks, mode=req.mode)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/orchestrate")
+def orchestrate_endpoint(req: OrchestrateRequest) -> Dict[str, Any]:
+    """Run approved production agents with explicit shared context."""
+    try:
+        from agents.unified_orchestrator import unified_orchestrator
+
+        return unified_orchestrator.run(req.task, agents=req.agents, context=req.context)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
