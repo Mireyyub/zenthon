@@ -67,6 +67,14 @@ class MediaUnderstandRequest(BaseModel):
     use_vlm: bool = True
 
 
+class ImageGenerateRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=2000)
+    width: int = Field(default=512, ge=32, le=2048)
+    height: int = Field(default=512, ge=32, le=2048)
+    style: str = "auto"
+    seed: Optional[int] = None
+
+
 class SpeechRequest(BaseModel):
     path: Optional[str] = None
     text: Optional[str] = None
@@ -88,6 +96,7 @@ def root() -> Dict[str, Any]:
             "/teach",
             "/volumes",
             "/media/understand",
+            "/media/generate",
             "/audio",
         ],
     }
@@ -240,6 +249,16 @@ def media_understand(req: MediaUnderstandRequest) -> Dict[str, Any]:
         return understand_image(
             req.path, question=req.question, use_vlm=req.use_vlm, inject_facts=False
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/media/generate")
+def media_generate(req: ImageGenerateRequest) -> Dict[str, Any]:
+    try:
+        from multimodal.generate import generate_image
+
+        return generate_image(req.prompt, width=req.width, height=req.height, style=req.style, seed=req.seed)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
