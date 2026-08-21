@@ -82,7 +82,7 @@ class LLMSettings:
     base_url: str = "http://localhost:11434/v1"
     ollama_host: str = "http://localhost:11434"
     api_key: str = "ollama"
-    model: str = "llama3.2"
+    model: str = "llama3.2:1b"
     embed_model: str = "nomic-embed-text"
     timeout: float = 120.0
     temperature: float = 0.4
@@ -172,7 +172,7 @@ def _build_llm() -> LLMSettings:
         "ollama": {
             "base_url": f"{ollama_host}/v1",
             "api_key": "ollama",
-            "model": "llama3.2",
+            "model": "llama3.2:1b",
         },
         "openai": {
             "base_url": "https://api.openai.com/v1",

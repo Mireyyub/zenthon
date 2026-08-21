@@ -18,7 +18,7 @@ from core.logger import logger
 class LLMConfig:
     api_key: str = "ollama"
     base_url: str = "http://localhost:11434/v1"
-    model: str = "llama3.2"
+    model: str = "llama3.2:1b"
     timeout: float = 120.0
     temperature: float = 0.4
     max_tokens: int = 1024
@@ -177,7 +177,7 @@ def get_llm_client(force_new: bool = False) -> LLMClient:
     return _client
 
 
-def use_ollama(model: str = "llama3.2", host: str = "http://localhost:11434") -> LLMClient:
+def use_ollama(model: str = "llama3.2:1b", host: str = "http://localhost:11434") -> LLMClient:
     global _client
     cfg = LLMConfig(
         api_key="ollama",
