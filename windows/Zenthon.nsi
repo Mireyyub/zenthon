@@ -1,9 +1,10 @@
 !include "MUI2.nsh"
 !define APP_NAME "Zenthon AI Platform"
 !define APP_EXE "Zenthon.exe"
+!define PROJECT_DIR "${__FILEDIR__}\.."
 
 Name "${APP_NAME}"
-OutFile "dist\Zenthon-Setup.exe"
+OutFile "${PROJECT_DIR}\dist\Zenthon-Setup.exe"
 InstallDir "$LOCALAPPDATA\Programs\Zenthon"
 RequestExecutionLevel user
 
@@ -17,7 +18,7 @@ RequestExecutionLevel user
 
 Section "Install"
   SetOutPath "$INSTDIR"
-  File /r "dist\Zenthon\*.*"
+  File /r "${PROJECT_DIR}\dist\Zenthon\*.*"
   CreateDirectory "$SMPROGRAMS\Zenthon AI Platform"
   CreateShortCut "$SMPROGRAMS\Zenthon AI Platform\Zenthon AI Platform.lnk" "$INSTDIR\${APP_EXE}"
   CreateShortCut "$DESKTOP\Zenthon AI Platform.lnk" "$INSTDIR\${APP_EXE}"

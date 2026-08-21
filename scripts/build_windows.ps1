@@ -6,13 +6,14 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-if ($env:OS -ne "Windows_NT") {
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw "Windows .exe paketi yalnız Windows 11 mühitində build edilə bilər."
 }
 
+$SystemPython = (Get-Command python.exe -ErrorAction Stop).Source
 $BuildPython = Join-Path $Root ".build-venv\Scripts\python.exe"
 if (-not (Test-Path $BuildPython)) {
-    py -3 -m venv .build-venv
+    & $SystemPython -m venv .build-venv
 }
 
 & $BuildPython -m pip install --upgrade pip
@@ -23,11 +24,17 @@ if (-not (Test-Path $BuildPython)) {
     zenthon_desktop.py
 
 if ($Installer) {
-    $MakeNsis = Get-Command makensis.exe -ErrorAction SilentlyContinue
+    $MakeNsis = (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+    if (-not $MakeNsis) {
+        $MakeNsis = @(
+            "${env:ProgramFiles(x86)}\NSIS\makensis.exe",
+            "$env:ProgramFiles\NSIS\makensis.exe"
+        ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    }
     if (-not $MakeNsis) {
         throw "NSIS tapılmadı. NSIS quraşdırın, sonra yenidən -Installer parametrini istifadə edin."
     }
-    & $MakeNsis.Source "$Root\windows\Zenthon.nsi"
+    & $MakeNsis "$Root\windows\Zenthon.nsi"
 }
 
 Write-Host "Build tamamlandı: $Root\dist\Zenthon\Zenthon.exe"
