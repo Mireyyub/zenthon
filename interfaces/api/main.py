@@ -93,6 +93,7 @@ def root() -> Dict[str, Any]:
         "endpoints": [
             "/health",
             "/status",
+            "/native-core/status",
             "/think",
             "/reason",
             "/cycle",
@@ -123,6 +124,14 @@ def status() -> Dict[str, Any]:
         return leon_status()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/native-core/status")
+def native_core_status() -> Dict[str, Any]:
+    """Expose the active acceleration source without claiming a missing binary is healthy."""
+    from native_core import health_report
+
+    return health_report()
 
 
 @app.post("/think")

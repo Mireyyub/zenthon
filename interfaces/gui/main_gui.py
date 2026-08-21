@@ -80,6 +80,19 @@ class LeonApp:
         status.pack(side=tk.RIGHT, padx=14, pady=14)
         self.header_status = ttk.Label(status, text="● LOCAL CORE READY", style="Hud.TLabel")
         self.header_status.pack(anchor=tk.E)
+        self.native_status = ttk.Label(status, text=self._native_core_status_text(), style="Subtitle.TLabel")
+        self.native_status.pack(anchor=tk.E, pady=(3, 0))
+
+    @staticmethod
+    def _native_core_status_text() -> str:
+        try:
+            from native_core import health_report
+
+            report = health_report()
+            source = "native binary" if report.get("available") else "Python fallback"
+            return f"Native Core · {source}"
+        except Exception:
+            return "Native Core · unavailable"
 
     def _create_menu(self) -> None:
         menubar = tk.Menu(self.root)

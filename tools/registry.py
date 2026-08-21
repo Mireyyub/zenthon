@@ -131,6 +131,32 @@ def _register_builtins():
         logger.warning(f"safe_fs tools not loaded: {e}")
 
     try:
+        from native_core import get_native_core, health_report
+
+        native_core = get_native_core()
+        tool_registry.register("native_core_status", health_report, "Native core acceleration status")
+        tool_registry.register(
+            "normalize_text",
+            lambda text="": native_core.normalize_text(text).as_dict(),
+            "Text normalization with optional native acceleration",
+            {"text": "str"},
+        )
+        tool_registry.register(
+            "text_fingerprint",
+            lambda text="": native_core.fingerprint(text).as_dict(),
+            "SHA-256 fingerprint with optional native acceleration",
+            {"text": "str"},
+        )
+        tool_registry.register(
+            "text_metrics",
+            lambda text="": native_core.token_metrics(text).as_dict(),
+            "Token metrics with optional native acceleration",
+            {"text": "str"},
+        )
+    except Exception as e:
+        logger.debug(f"native-core tools not loaded: {e}")
+
+    try:
         from multimodal.image_ops import image_info, process_image
         from multimodal.generate import generate_image
         from multimodal.vision import describe_image
