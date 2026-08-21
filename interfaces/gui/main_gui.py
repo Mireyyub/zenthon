@@ -62,6 +62,7 @@ class LeonApp:
         self.notebook.pack(fill=tk.BOTH, expand=True)
         self._create_think_tab()
         self._create_teach_tab()
+        self._create_improve_tab()
         self._create_status_tab()
 
     def _create_think_tab(self) -> None:
@@ -137,6 +138,96 @@ class LeonApp:
 
         self.status_output = scrolledtext.ScrolledText(frame, wrap=tk.WORD)
         self.status_output.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+    def _create_improve_tab(self) -> None:
+        frame = ttk.Frame(self.notebook)
+        self.notebook.add(frame, text="Improve")
+
+        controls = ttk.Frame(frame)
+        controls.pack(fill=tk.X, padx=8, pady=8)
+        ttk.Button(controls, text="Refresh Cycle", command=self._on_improve_refresh).pack(side=tk.LEFT, padx=4)
+        ttk.Button(controls, text="Run Safe Simulation", command=self._on_improve_simulate).pack(side=tk.LEFT, padx=4)
+        self.improve_summary = ttk.Label(controls, text="Cycle status yüklənir…")
+        self.improve_summary.pack(side=tk.LEFT, padx=12)
+
+        graph_box = ttk.LabelFrame(frame, text="Self-Improvement Cycle")
+        graph_box.pack(fill=tk.X, padx=8, pady=8)
+        self.improve_canvas = tk.Canvas(graph_box, height=150, bg="#17212b", highlightthickness=0)
+        self.improve_canvas.pack(fill=tk.X, padx=8, pady=8)
+
+        detail = ttk.LabelFrame(frame, text="Audit & Decision Details")
+        detail.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.improve_output = scrolledtext.ScrolledText(detail, wrap=tk.WORD)
+        self.improve_output.pack(fill=tk.BOTH, expand=True)
+        self._draw_improve_cycle({})
+        self._on_improve_refresh()
+
+    def _draw_improve_cycle(self, data: Dict[str, Any]) -> None:
+        canvas = self.improve_canvas
+        canvas.delete("all")
+        stages = [
+            ("Diagnose", bool(data.get("diagnosis")), "Zəif hallar"),
+            ("Propose", bool(data.get("proposal")), "Namizədlər"),
+            ("Quality Gate", data.get("quality_ok") is True, "≥ 55 skor"),
+            ("Apply", bool(data.get("applied")), "İcazəli yazma"),
+            ("Verify", data.get("verified") is True, "Smoke / test"),
+            ("Rollback", bool(data.get("rolled_back")), "Yalnız xəta"),
+        ]
+        width = max(canvas.winfo_width(), 880)
+        step = (width - 40) / len(stages)
+        for index, (name, state, note) in enumerate(stages):
+            x1, x2 = 20 + index * step, 20 + (index + 1) * step - 14
+            color = "#22c55e" if state else "#475569"
+            if name == "Rollback" and state:
+                color = "#f59e0b"
+            canvas.create_rectangle(x1, 30, x2, 105, fill=color, outline="#dbeafe", width=1)
+            canvas.create_text((x1 + x2) / 2, 57, text=name, fill="white", font=("TkDefaultFont", 10, "bold"))
+            canvas.create_text((x1 + x2) / 2, 81, text=note, fill="#e2e8f0", font=("TkDefaultFont", 8))
+            if index < len(stages) - 1:
+                canvas.create_line(x2 + 2, 67, x2 + 12, 67, fill="#94a3b8", width=2, arrow=tk.LAST)
+        canvas.create_text(20, 128, anchor=tk.W, text="Yaşıl: təsdiqli mərhələ · Boz: gözləyir / tətbiq edilməyib · Sarı: rollback", fill="#cbd5e1")
+
+    def _on_improve_refresh(self) -> None:
+        def worker():
+            try:
+                from brain.self_improve import self_improve_engine
+                from brain.self_mutate import self_mutate_engine
+
+                improve = self_improve_engine.status()
+                mutate = self_mutate_engine.status()
+                last_apply = mutate.get("last_apply") or {}
+                proposal = mutate.get("last_proposal") or {}
+                diagnosis = improve.get("last_diagnose") or {}
+                quality = (proposal.get("quality") or {}).get("score")
+                data = {
+                    "diagnosis": diagnosis,
+                    "proposal": proposal,
+                    "quality_ok": isinstance(quality, (int, float)) and quality >= 55,
+                    "applied": last_apply.get("ok"),
+                    "verified": last_apply.get("smoke", {}).get("ok") if isinstance(last_apply.get("smoke"), dict) else bool(last_apply.get("ok")),
+                    "rolled_back": last_apply.get("rolled_back", False),
+                }
+                text = json.dumps({"diagnosis": diagnosis, "proposal": proposal, "last_apply": last_apply, "mutation_enabled": mutate.get("enabled")}, ensure_ascii=False, indent=2, default=str)
+                self.root.after(0, lambda: self._draw_improve_cycle(data))
+                self.root.after(0, lambda: self._set_text(self.improve_output, text))
+                self.root.after(0, lambda: self.improve_summary.config(text=f"Quality: {quality if quality is not None else '—'} | Mutasiya: {'aktiv' if mutate.get('enabled') else 'qapalı'}"))
+            except Exception as e:
+                self.root.after(0, lambda: self._set_text(self.improve_output, f"Xəta: {e}"))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_improve_simulate(self) -> None:
+        self._set_text(self.improve_output, "Təhlükəsiz simulyasiya işləyir…\n")
+        def worker():
+            try:
+                from brain.self_improve import self_improve_engine
+                from brain.self_mutate import self_mutate_engine
+
+                result = {"self_improve": self_improve_engine.auto(rounds=1, dry_run=True), "mutation": self_mutate_engine.auto_cycle(apply_best=False)}
+                self.root.after(0, lambda: self._set_text(self.improve_output, json.dumps(result, ensure_ascii=False, indent=2, default=str)))
+                self.root.after(0, self._on_improve_refresh)
+            except Exception as e:
+                self.root.after(0, lambda: self._set_text(self.improve_output, f"Xəta: {e}"))
+        threading.Thread(target=worker, daemon=True).start()
 
     def _create_status_bar(self) -> None:
         self.status_bar = ttk.Label(self.root, text="Leon Ready", relief=tk.SUNKEN, anchor=tk.W)
