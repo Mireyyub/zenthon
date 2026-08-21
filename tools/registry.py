@@ -69,18 +69,18 @@ class ToolRegistry:
         if not params:
             return tool.func()
         key = params[0]
+        if name == "write_file" and "||" in arg:
+            path, content = arg.split("||", 1)
+            return tool.func(path=path.strip(), content=content)
+        if name == "write_file":
+            return tool.func(path=arg, content="")
         if key in ("text", "expression", "code", "content", "prompt"):
             return tool.func(**{key: arg})
         if key == "path":
             return tool.func(path=arg or ".")
-        if name == "write_file" and "||" in arg:
-            path, content = arg.split("||", 1)
-            return tool.func(path=path.strip(), content=content)
         if name == "image_process" and "||" in arg:
             path, op = arg.split("||", 1)
             return tool.func(path=path.strip(), op=op.strip())
-        if name == "write_file":
-            return tool.func(path=arg, content="")
         return tool.func(**{key: arg})
 
     def list_tools(self, production_only: bool = False) -> List[Dict[str, str]]:

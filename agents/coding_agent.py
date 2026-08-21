@@ -55,6 +55,8 @@ class CodingAgent(BaseAgent):
                     error="generated code contains forbidden tokens",
                     metadata={"code": code[:300]},
                 )
+            if not code:
+                code = self._offline_code(task)
         else:
             code = self._offline_code(task)
 

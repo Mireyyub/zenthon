@@ -89,7 +89,52 @@ class LLMClient:
                 return content.strip() if content else None
 
         except Exception as e:
+            if self.config.provider == "ollama":
+                reply = self._ollama_native_chat(
+                    messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    model=model,
+                )
+                if reply is not None:
+                    return reply
             logger.warning(f"LLMClient chat error: {type(e).__name__}: {e}")
+            return None
+
+    def _ollama_native_chat(
+        self,
+        messages: List[Dict[str, str]],
+        *,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        model: Optional[str] = None,
+    ) -> Optional[str]:
+        """Fallback for Ollama installations with an unavailable OpenAI-compatible route."""
+        try:
+            import urllib.request
+
+            base = self.config.base_url.replace("/v1", "").rstrip("/")
+            payload = {
+                "model": model or self.config.model,
+                "messages": messages,
+                "stream": False,
+                "options": {
+                    "temperature": temperature if temperature is not None else self.config.temperature,
+                    "num_predict": max_tokens or self.config.max_tokens,
+                },
+            }
+            req = urllib.request.Request(
+                f"{base}/api/chat",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=self.config.timeout) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            content = (body.get("message") or {}).get("content", "")
+            return content.strip() or None
+        except Exception as e:
+            logger.debug(f"LLMClient native Ollama fallback: {type(e).__name__}: {e}")
             return None
 
     def complete(self, prompt: str, system: Optional[str] = None, **kwargs) -> Optional[str]:

@@ -24,3 +24,4 @@
 {"id":"000024","lesson":"000004","instruction":"Banan hansı kateqoriyaya daxildir?","input":"","reasoning":"","output":"Meyvə.","confidence":1.0,"tags":["category"],"language":"az"}
 {"id":"000025","lesson":"000001","instruction":"Oxşarlıq eynilikdirmi?","input":"","reasoning":"","output":"Xeyr.","confidence":1.0,"tags":["rule"],"language":"az"}
 {"id": "str_0a6cf5", "instruction": "Lokal LLM nə üçün istifadə olunur?", "output": "Mətn əsaslı lokal düşünmə və cavab yaratmaq üçün.", "lesson": "strategy_train_enrich", "confidence": 0.75, "tags": ["self_mutate", "strategy"]}
+{"id": "qa_2021e9", "instruction": "Təhlükəsiz mutasiya nə edir?", "output": "Yalnız keyfiyyət və geri alma qapılarından keçən dəyişikliyi tətbiq edir.", "lesson": "verified_qa_pair", "confidence": 0.9, "tags": ["self_mutate", "qa_pair"]}
