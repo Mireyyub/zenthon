@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 def _require_pil():
     try:
-        return __import__("PIL.Image", fromlist=["Image"]).Image
+        return __import__("PIL.Image", fromlist=["Image"])
     except ImportError as e:
         raise RuntimeError("Pillow yoxdur. pip install Pillow") from e
 
