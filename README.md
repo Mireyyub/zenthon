@@ -44,6 +44,17 @@ python run.py
 
 VS Code içində alternativ olaraq **Terminal → Run Build Task** seçin və ya `F5` düyməsi ilə **Leon AI: Run local API** konfiqurasiyasını başladın. Core yoxlaması üçün `python run.py --check` istifadə edin.
 
+### Masaüstü tətbiqi və avtomatik başlanğıc (Linux)
+
+`python run.py --gui` ilk açılışda lokal `.venv` və layihə asılılıqlarını hazırlayır, sonra Zenthon qrafik tətbiqini açır.
+
+```bash
+python run.py --gui
+python scripts/install_desktop_linux.py --autostart
+```
+
+İkinci əmr tətbiqi sistem menyusuna **Zenthon AI Platform** kimi əlavə edir və kompüterə daxil olarkən avtomatik başlatmanı aktivləşdirir. Qısayol və autostart qeydlərini silmək üçün `python scripts/install_desktop_linux.py --remove` işlədin.
+
 ```bash
 git clone https://github.com/Mireyyub/zenthon.git
 cd zenthon

@@ -3,6 +3,7 @@
 Usage:
     python run.py            # creates .venv if needed and starts the local API
     python run.py --check    # creates .venv if needed and runs the core smoke test
+    python run.py --gui      # creates .venv if needed and opens the desktop application
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="127.0.0.1", help="API hostu")
     parser.add_argument("--port", type=int, default=8000, help="API portu")
     parser.add_argument("--prepare-ollama", action="store_true", help="Lokal Ollama serverini yoxla və başlat")
+    parser.add_argument("--gui", action="store_true", help="Masaüstü qrafik tətbiqini aç")
     args = parser.parse_args(argv)
     python = ensure_environment()
 
@@ -52,7 +54,10 @@ def main(argv: list[str] | None = None) -> int:
         command = [str(python), "-c", "from brain.llm.ollama_manager import ensure_ollama; print(ensure_ollama())"]
         return subprocess.call(command, cwd=ROOT)
 
-    if args.check:
+    if args.gui:
+        command = [str(python), "-m", "interfaces.gui.main_gui"]
+        print("[run] Zenthon masaüstü tətbiqi başladılır...")
+    elif args.check:
         command = [str(python), "zenthon_app.py", "--smoke", "--no-llm-check"]
     else:
         command = [
