@@ -116,6 +116,8 @@ AUTO_APPLY_MIN_QUALITY = 55.0
 # Deterministic strategies (no LLM required)
 STRATEGIES = (
     "train_enrich",
+    "qa_pair_append",
+    "diagnostic_repair",
     "docstring_boost",
     "confidence_bump",
     "log_guard",
@@ -510,6 +512,19 @@ class SelfMutateEngine:
                 "error": f"unknown strategy: {strategy}",
                 "available": list(STRATEGIES),
             }
+
+        if strategy == "diagnostic_repair":
+            return self.propose_from_diagnosis()
+
+        if strategy == "qa_pair_append":
+            if not re.search(r"(?:sual|q)\s*[:：].+(?:cavab|a)\s*[:：]", goal, re.I | re.S):
+                return {"ok": False, "error": "qa_pair_append üçün 'sual: ... cavab: ...' formatı lazımdır"}
+            target = path or self.route_goal(goal).get("path")
+            if not str(target).endswith(".jsonl"):
+                target = "curriculum/volumes/01_foundation/train.jsonl"
+            q, a = self._extract_qa(goal)
+            line = json.dumps({"id": "qa_" + uuid.uuid4().hex[:6], "instruction": q, "output": a, "lesson": "verified_qa_pair", "confidence": 0.9, "tags": ["self_mutate", "qa_pair"]}, ensure_ascii=False)
+            return self.propose(str(target), mode="append", new=line + "\n", reason="strategy:qa_pair_append", author="leon:strategy", goal=goal, strategy=strategy)
 
         if strategy == "train_enrich":
             target = path or self.route_goal(goal or "öyrən").get("path")
@@ -946,7 +961,13 @@ class SelfMutateEngine:
                 ids.extend(out["diagnose_mutate"].get("proposal_ids") or [])
             if out.get("goal_propose", {}).get("ok"):
                 ids.append(out["goal_propose"].get("proposal_id"))
-            out["applied"] = [self.apply(pid, run_smoke=True) for pid in ids if pid]
+            ranked = []
+            for pid in ids:
+                prop = read_json(self.dir / "proposals" / f"{pid}.json", default={}) or {}
+                ranked.append((float((prop.get("quality") or {}).get("score") or 0), pid))
+            best = max(ranked, default=(0.0, None))
+            out["applied"] = [self.apply(best[1], run_smoke=True)] if best[1] and best[0] >= AUTO_APPLY_MIN_QUALITY else []
+            out["selection"] = {"mode": "best_quality_only", "candidate_count": len(ranked), "best_score": best[0]}
             out["steps"].append("apply")
         else:
             out["note"] = "Dry propose — LEON_ALLOW_MUTATE=1 + apply_best for write"
