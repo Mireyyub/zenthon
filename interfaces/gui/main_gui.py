@@ -12,19 +12,25 @@ from tkinter import messagebox, scrolledtext, ttk
 from typing import Any, Dict, Optional
 
 from core.logger import logger
+from interfaces.gui.command_center import infer_operation_mode
 
 
 class LeonApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Leon AI Platform")
-        self.root.geometry("1000x720")
+        self.root.title("Zenthon AI Command Center")
+        self.root.geometry("1180x760")
+        self.root.minsize(920, 620)
         self._orch = None
         self.log_queue: queue.Queue = queue.Queue()
+        self.mission_events: list[dict[str, str]] = [
+            {"label": "Command center ready", "detail": "Local-first operator surface initialized", "tone": "core"}
+        ]
 
         self._configure_styles()
+        self._create_command_header()
         self.main_frame = ttk.Frame(self.root)
-        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 12))
         self._create_menu()
         self._create_notebook()
         self._create_status_bar()
@@ -45,7 +51,35 @@ class LeonApp:
             style.theme_use("clam")
         except Exception:
             pass
-        style.configure("TButton", padding=6)
+        style.configure(".", background="#06101D", foreground="#E8F4FF")
+        style.configure("TFrame", background="#06101D")
+        style.configure("Panel.TFrame", background="#0A1D30")
+        style.configure("TLabel", background="#06101D", foreground="#D7E8FA")
+        style.configure("Hud.TLabel", background="#071625", foreground="#74E7B6", font=("Segoe UI", 9, "bold"))
+        style.configure("Title.TLabel", background="#071625", foreground="#F2F7FF", font=("Segoe UI", 18, "bold"))
+        style.configure("Subtitle.TLabel", background="#071625", foreground="#8FA9C4", font=("Segoe UI", 9))
+        style.configure("TButton", padding=7, background="#0C2237", foreground="#DDF0FF", bordercolor="#23506F")
+        style.map("TButton", background=[("active", "#143954")], foreground=[("active", "#FFFFFF")])
+        style.configure("Accent.TButton", background="#70E6B1", foreground="#06201A", font=("Segoe UI", 9, "bold"))
+        style.map("Accent.TButton", background=[("active", "#8AF4C7")])
+        style.configure("TNotebook", background="#06101D", borderwidth=0)
+        style.configure("TNotebook.Tab", background="#0C2237", foreground="#91A9C4", padding=(13, 8), font=("Segoe UI", 9, "bold"))
+        style.map("TNotebook.Tab", background=[("selected", "#123E46")], foreground=[("selected", "#70E6B1")])
+        style.configure("TLabelframe", background="#06101D", bordercolor="#204967", relief="solid")
+        style.configure("TLabelframe.Label", background="#06101D", foreground="#79A2C8", font=("Segoe UI", 9, "bold"))
+
+    def _create_command_header(self) -> None:
+        header = ttk.Frame(self.root, style="Panel.TFrame")
+        header.pack(fill=tk.X, padx=14, pady=(12, 10))
+        identity = ttk.Frame(header, style="Panel.TFrame")
+        identity.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=14, pady=11)
+        ttk.Label(identity, text="ZENTHON / AI COMMAND CENTER", style="Hud.TLabel").pack(anchor=tk.W)
+        ttk.Label(identity, text="Local AI operator surface", style="Title.TLabel").pack(anchor=tk.W, pady=(2, 1))
+        ttk.Label(identity, text="Mission plan · agent execution · safe improvement observability", style="Subtitle.TLabel").pack(anchor=tk.W)
+        status = ttk.Frame(header, style="Panel.TFrame")
+        status.pack(side=tk.RIGHT, padx=14, pady=14)
+        self.header_status = ttk.Label(status, text="● LOCAL CORE READY", style="Hud.TLabel")
+        self.header_status.pack(anchor=tk.E)
 
     def _create_menu(self) -> None:
         menubar = tk.Menu(self.root)
@@ -60,10 +94,159 @@ class LeonApp:
     def _create_notebook(self) -> None:
         self.notebook = ttk.Notebook(self.main_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True)
+        self._create_command_center_tab()
         self._create_think_tab()
         self._create_teach_tab()
         self._create_improve_tab()
         self._create_status_tab()
+
+    def _create_command_center_tab(self) -> None:
+        frame = ttk.Frame(self.notebook)
+        self.notebook.add(frame, text="Command Center")
+
+        mission = ttk.LabelFrame(frame, text="Live Mission")
+        mission.pack(fill=tk.X, padx=8, pady=(8, 6))
+        mission.columnconfigure(0, weight=1)
+        self.command_mode = ttk.Label(mission, text="Reasoning Operation", foreground="#70E6B1", font=("Segoe UI", 12, "bold"))
+        self.command_mode.grid(row=0, column=0, sticky=tk.W, padx=12, pady=(10, 2))
+        self.command_objective = ttk.Label(mission, text="Write an objective to begin a controlled mission.", foreground="#9EB6CF")
+        self.command_objective.grid(row=1, column=0, sticky=tk.W, padx=12, pady=(0, 10))
+        self.command_state = ttk.Label(mission, text="● STANDBY", foreground="#56D8FF", font=("Segoe UI", 8, "bold"))
+        self.command_state.grid(row=0, column=1, rowspan=2, sticky=tk.E, padx=12)
+
+        stages = ttk.LabelFrame(frame, text="Execution Trace")
+        stages.pack(fill=tk.X, padx=8, pady=6)
+        self.command_canvas = tk.Canvas(stages, height=104, bg="#0A1D30", highlightthickness=0)
+        self.command_canvas.pack(fill=tk.X, padx=8, pady=8)
+        self._draw_command_stages(active_index=-1, complete=False)
+
+        work = ttk.Frame(frame)
+        work.pack(fill=tk.BOTH, expand=True, padx=8, pady=6)
+        work.columnconfigure(0, weight=5)
+        work.columnconfigure(1, weight=4)
+        work.rowconfigure(0, weight=1)
+
+        prompt_box = ttk.LabelFrame(work, text="Mission Input")
+        prompt_box.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 5))
+        self.command_query = scrolledtext.ScrolledText(
+            prompt_box, height=10, wrap=tk.WORD, bg="#0A1D30", fg="#E8F4FF", insertbackground="#70E6B1",
+            relief=tk.FLAT, padx=10, pady=10,
+        )
+        self.command_query.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        command_controls = ttk.Frame(prompt_box)
+        command_controls.pack(fill=tk.X, padx=8, pady=(0, 8))
+        ttk.Button(command_controls, text="Run Mission", style="Accent.TButton", command=self._on_command_run).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(command_controls, text="Use Think Tab", command=lambda: self.notebook.select(1)).pack(side=tk.LEFT, padx=6)
+        ttk.Button(command_controls, text="Clear", command=self._on_command_clear).pack(side=tk.RIGHT)
+
+        event_box = ttk.LabelFrame(work, text="Mission Events")
+        event_box.grid(row=0, column=1, sticky=tk.NSEW, padx=(5, 0))
+        self.command_events = scrolledtext.ScrolledText(
+            event_box, height=10, wrap=tk.WORD, state=tk.DISABLED, bg="#0A1D30", fg="#BFD5EA", relief=tk.FLAT, padx=10, pady=10,
+        )
+        self.command_events.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self._refresh_command_events()
+
+        result = ttk.LabelFrame(frame, text="Result & Confidence")
+        result.pack(fill=tk.BOTH, expand=True, padx=8, pady=(6, 8))
+        self.command_output = scrolledtext.ScrolledText(
+            result, wrap=tk.WORD, bg="#071625", fg="#DCEBFA", insertbackground="#70E6B1", relief=tk.FLAT, padx=10, pady=10,
+        )
+        self.command_output.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self._set_text(self.command_output, "Zenthon is standing by. Each mission exposes its operation mode, stages, result source, and confidence.\n")
+
+    def _draw_command_stages(self, active_index: int, complete: bool) -> None:
+        canvas = self.command_canvas
+        canvas.delete("all")
+        stages = [
+            ("Intake", "objective accepted"),
+            ("Intent", "skill selected"),
+            ("Reason", "agent executes"),
+            ("Deliver", "result verified"),
+        ]
+        width = max(canvas.winfo_width(), 820)
+        step = (width - 36) / len(stages)
+        for index, (label, detail) in enumerate(stages):
+            x1, x2 = 18 + index * step, 18 + (index + 1) * step - 12
+            if complete or index < active_index:
+                color, text_color = "#174D4C", "#86F1C3"
+            elif index == active_index:
+                color, text_color = "#173E5C", "#75D9FF"
+            else:
+                color, text_color = "#16283B", "#7892AE"
+            canvas.create_rectangle(x1, 18, x2, 75, fill=color, outline="#2B6680", width=1)
+            canvas.create_text((x1 + x2) / 2, 39, text=label, fill=text_color, font=("Segoe UI", 10, "bold"))
+            canvas.create_text((x1 + x2) / 2, 58, text=detail, fill="#B2C5D9", font=("Segoe UI", 8))
+            if index < len(stages) - 1:
+                canvas.create_line(x2 + 2, 46, x2 + 10, 46, fill="#587692", width=2, arrow=tk.LAST)
+        status = "MISSION COMPLETE" if complete else ("STANDBY" if active_index < 0 else f"ACTIVE: {stages[active_index][0].upper()}")
+        canvas.create_text(18, 92, text=status, anchor=tk.W, fill="#7FA8C9", font=("Segoe UI", 8, "bold"))
+
+    def _append_mission_event(self, label: str, detail: str) -> None:
+        self.mission_events.insert(0, {"label": label, "detail": detail, "tone": "core"})
+        self.mission_events = self.mission_events[:8]
+        self._refresh_command_events()
+
+    def _refresh_command_events(self) -> None:
+        if not hasattr(self, "command_events"):
+            return
+        self.command_events.config(state=tk.NORMAL)
+        self.command_events.delete("1.0", tk.END)
+        for event in self.mission_events:
+            self.command_events.insert(tk.END, f"● {event['label']}\n", ("label",))
+            self.command_events.insert(tk.END, f"  {event['detail']}\n\n")
+        self.command_events.tag_configure("label", foreground="#70E6B1", font=("Segoe UI", 9, "bold"))
+        self.command_events.config(state=tk.DISABLED)
+
+    def _on_command_clear(self) -> None:
+        self.command_query.delete("1.0", tk.END)
+        self._set_text(self.command_output, "Mission input cleared. Zenthon is standing by.\n")
+        self.command_mode.config(text="Reasoning Operation")
+        self.command_objective.config(text="Write an objective to begin a controlled mission.")
+        self.command_state.config(text="● STANDBY", foreground="#56D8FF")
+        self._draw_command_stages(active_index=-1, complete=False)
+        self._append_mission_event("Mission reset", "Context cleared from the operator surface")
+
+    def _on_command_run(self) -> None:
+        query = self.command_query.get("1.0", tk.END).strip()
+        if not query:
+            messagebox.showwarning("Zenthon", "Write a mission objective first.")
+            return
+        mode = infer_operation_mode(query)
+        self.command_mode.config(text=mode)
+        self.command_objective.config(text=query[:150] + ("…" if len(query) > 150 else ""))
+        self.command_state.config(text="● EXECUTING", foreground="#56D8FF")
+        self._draw_command_stages(active_index=1, complete=False)
+        self._set_text(self.command_output, "Mission accepted. Intent mapping and agent routing are in progress…\n")
+        self._append_mission_event("Mission accepted", mode)
+        self._log(f"Command mission started: {mode}")
+
+        def worker():
+            try:
+                self.root.after(0, lambda: self._draw_command_stages(active_index=2, complete=False))
+                result = self._orch_lazy().run(query, reasoning_mode="auto", use_session=True)
+                text = (
+                    f"Operation : {mode}\n"
+                    f"Answer    : {result.get('answer') or result.get('conclusion')}\n"
+                    f"Confidence: {result.get('confidence')} ({result.get('confidence_label')})\n"
+                    f"Source    : {result.get('source')}\n"
+                    f"Trace ID  : {result.get('trace_id')}\n"
+                    f"LLM used  : {result.get('llm_used')}\n"
+                )
+                if result.get("agent"):
+                    text += f"\nAgent trace:\n{json.dumps(result['agent'], ensure_ascii=False, indent=2, default=str)}\n"
+                self.root.after(0, lambda: self._set_text(self.command_output, text))
+                self.root.after(0, lambda: self.command_state.config(text="● RESULT READY", foreground="#70E6B1"))
+                self.root.after(0, lambda: self._draw_command_stages(active_index=3, complete=True))
+                self.root.after(0, lambda: self._append_mission_event("Result ready", f"Source: {result.get('source')} · Confidence: {result.get('confidence')}"))
+                self.root.after(0, lambda: self._log("Command mission complete"))
+            except Exception as e:
+                self.root.after(0, lambda: self._set_text(self.command_output, f"Mission error: {e}"))
+                self.root.after(0, lambda: self.command_state.config(text="● ATTENTION REQUIRED", foreground="#F6C760"))
+                self.root.after(0, lambda: self._draw_command_stages(active_index=1, complete=False))
+                self.root.after(0, lambda: self._append_mission_event("Mission paused", str(e)))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _create_think_tab(self) -> None:
         frame = ttk.Frame(self.notebook)
@@ -230,7 +413,7 @@ class LeonApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _create_status_bar(self) -> None:
-        self.status_bar = ttk.Label(self.root, text="Leon Ready", relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar = ttk.Label(self.root, text="Zenthon Command Center · Ready", relief=tk.SUNKEN, anchor=tk.W)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def _process_log_queue(self) -> None:
