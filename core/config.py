@@ -138,6 +138,10 @@ class SystemConfig:
         self.path.ensure()
         return self
 
+    def load_config(self, config_file: Optional[str] = None) -> "SystemConfig":
+        """Legacy instance API retained for integrations that reload settings."""
+        return load_config(config_file)
+
 
 def _build_paths() -> PathConfig:
     root = _repo_root()

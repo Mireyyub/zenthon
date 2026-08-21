@@ -9,7 +9,7 @@ import pytest
 
 
 @pytest.fixture()
-ndef tmp_paths(tmp_path: Path):
+def tmp_paths(tmp_path: Path):
     return {
         "facts": tmp_path / "facts.json",
         "graph": tmp_path / "graph.json",

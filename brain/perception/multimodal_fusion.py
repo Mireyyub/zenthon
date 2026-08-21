@@ -10,6 +10,30 @@ class MultimodalFusion:
 
     SUPPORTED = ("text", "image", "audio")
 
+    def process(self, input_data: Any) -> Dict[str, Any]:
+        """Adapt legacy ThinkingBrain inputs to the canonical fusion result.
+
+        The core brain still calls a perception ``process`` method.  This
+        adapter preserves that contract while delegating all actual work to
+        ``fuse`` so text-only operation remains dependency-light.
+        """
+        if isinstance(input_data, dict):
+            result = self.fuse(
+                text=input_data.get("text") or input_data.get("query"),
+                image=input_data.get("image"),
+                audio=input_data.get("audio"),
+            )
+        elif isinstance(input_data, (list, tuple)):
+            result = self.fuse(text=" ".join(str(item) for item in input_data))
+        else:
+            result = self.fuse(text=str(input_data or ""))
+
+        modalities = result.get("modalities") or ["text"]
+        result["summary"] = result.get("fused_text") or ""
+        result["modality"] = modalities[0]
+        result["confidence"] = 0.9 if result.get("ok") else 0.3
+        return result
+
     def fuse(
         self,
         text: Optional[str] = None,

@@ -21,6 +21,7 @@ class AILogger:
         log_dir: Optional[str] = None,
         log_file: Optional[str] = None,
         level: str = None,
+        verbose: bool = True,
     ):
         self.name = name
         self.log_dir = log_dir or config.path.logs_dir
@@ -35,8 +36,7 @@ class AILogger:
         self.logger.setLevel(getattr(logging, self.level.upper()))
 
         # Prevent duplicate handlers
-        if self.logger.handlers:
-            return
+        self.logger.propagate = False
 
         # Create formatter
         formatter = logging.Formatter(
@@ -45,15 +45,21 @@ class AILogger:
         )
 
         # Console handler
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setFormatter(formatter)
-        self.logger.addHandler(console_handler)
+        if verbose and not any(isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler) for handler in self.logger.handlers):
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setFormatter(formatter)
+            self.logger.addHandler(console_handler)
 
         # File handler
         file_path = os.path.join(self.log_dir, self.log_file)
-        file_handler = logging.FileHandler(file_path)
-        file_handler.setFormatter(formatter)
-        self.logger.addHandler(file_handler)
+        absolute_path = os.path.abspath(file_path)
+        if not any(
+            isinstance(handler, logging.FileHandler) and handler.baseFilename == absolute_path
+            for handler in self.logger.handlers
+        ):
+            file_handler = logging.FileHandler(file_path)
+            file_handler.setFormatter(formatter)
+            self.logger.addHandler(file_handler)
 
     def debug(self, message: str) -> None:
         """Log debug message."""

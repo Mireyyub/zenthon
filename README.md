@@ -34,6 +34,16 @@ Repo: https://github.com/Mireyyub/zenthon
 
 ## Sürətli start
 
+### VS Code — tək əmr
+
+Reponu VS Code ilə açın və terminalda yalnız aşağıdakı əmri icra edin. İlk çalışmada `.venv` avtomatik yaradılır, minimal asılılıqlar quraşdırılır və API `http://127.0.0.1:8000/docs` ünvanında açılır.
+
+```bash
+python run.py
+```
+
+VS Code içində alternativ olaraq **Terminal → Run Build Task** seçin və ya `F5` düyməsi ilə **Leon AI: Run local API** konfiqurasiyasını başladın. Core yoxlaması üçün `python run.py --check` istifadə edin.
+
 ```bash
 git clone https://github.com/Mireyyub/zenthon.git
 cd zenthon

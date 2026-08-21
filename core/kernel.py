@@ -8,6 +8,16 @@ import sys
 import platform
 from typing import Any, Dict, Optional
 
+try:
+    import psutil
+except ImportError:  # pragma: no cover - optional runtime telemetry
+    psutil = None
+
+try:
+    import GPUtil
+except ImportError:  # pragma: no cover - optional GPU telemetry
+    GPUtil = None
+
 from core.config import config
 from core.logger import logger
 from core.event_bus import event_bus
@@ -110,8 +120,6 @@ class SystemKernel:
             "leon_dir": str(config.path.leon_dir),
         }
         try:
-            import psutil
-
             mem = psutil.virtual_memory()
             info["RAM_GB"] = f"{mem.total / (1024 ** 3):.1f}"
             info["CPU_cores"] = psutil.cpu_count()
@@ -128,8 +136,6 @@ class SystemKernel:
     def get_system_resources(self) -> Dict[str, Any]:
         result: Dict[str, Any] = {"state": lifecycle.get_state()}
         try:
-            import psutil
-
             mem = psutil.virtual_memory()
             result["cpu_percent"] = psutil.cpu_percent(interval=0.3)
             result["memory"] = {
@@ -139,6 +145,10 @@ class SystemKernel:
             }
         except Exception:
             pass
+        try:
+            result["gpu"] = [] if GPUtil is None else [gpu.name for gpu in GPUtil.getGPUs()]
+        except Exception:
+            result["gpu"] = []
         return result
 
     def check_gpu_available(self) -> bool:

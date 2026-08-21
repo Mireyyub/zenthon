@@ -1,5 +1,7 @@
 """Leon Learning Engine + Curriculum bridge."""
 
+from typing import Dict
+
 from learning.feedback import FeedbackCollector
 from learning.evaluator import PerformanceEvaluator
 from learning.self_learning import SelfLearning

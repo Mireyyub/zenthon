@@ -55,9 +55,9 @@ mkdocs-material = "^8.5"
 
 [tool.poetry.scripts]
 zenthon-cli = "interfaces.cli.main_cli:main"
-zenthon-gui = "interfaces.gui.main_gui:main"
-zenthon-web = "interfaces.web.web_interface:main"
-zenthon-api = "inference.api.fastapi_app:run_api"
+zenthon-gui = "interfaces.gui.main_gui:run_gui"
+zenthon-web = "interfaces.web.web_interface:run_web_interface"
+zenthon-api = "interfaces.api.main:run"
 
 [tool.black]
 line-length = 88

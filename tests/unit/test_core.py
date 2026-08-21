@@ -36,9 +36,9 @@ class TestPathConfig(unittest.TestCase):
         """Test default path configuration."""
         config = PathConfig()
         self.assertTrue(os.path.isabs(config.base_dir))
-        self.assertTrue(config.data_dir.startswith(config.base_dir))
-        self.assertTrue(config.models_dir.startswith(config.base_dir))
-        self.assertTrue(config.logs_dir.startswith(config.base_dir))
+        self.assertTrue(os.fspath(config.data_dir).startswith(os.fspath(config.base_dir)))
+        self.assertTrue(os.fspath(config.models_dir).startswith(os.fspath(config.base_dir)))
+        self.assertTrue(os.fspath(config.logs_dir).startswith(os.fspath(config.base_dir)))
 
     def test_custom_base_dir(self):
         """Test custom base directory."""

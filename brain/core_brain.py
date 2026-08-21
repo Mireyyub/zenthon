@@ -60,7 +60,8 @@ class ThinkingBrain:
     @property
     def perception(self):
         if self._perception is None:
-            from brain.perception.multimodal_fusion import MultimodalPerception
+            from brain.perception import MultimodalPerception
+
             self._perception = MultimodalPerception()
         return self._perception
 
