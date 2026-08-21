@@ -111,6 +111,7 @@ DANGEROUS_ATTR = {
 
 MAX_DELTA_RATIO = 0.45
 MAX_WRITE_BYTES = 200_000
+AUTO_APPLY_MIN_QUALITY = 55.0
 
 # Deterministic strategies (no LLM required)
 STRATEGIES = (
@@ -977,10 +978,10 @@ class SelfMutateEngine:
         *,
         run_smoke: bool = True,
         force: bool = False,
-        min_quality: float = 25.0,
+        min_quality: float = AUTO_APPLY_MIN_QUALITY,
         run_import_check: bool = True,
     ) -> Dict[str, Any]:
-        if not self.mutation_enabled() and not force:
+        if not self.mutation_enabled():
             return {
                 "ok": False,
                 "error": "Mutation disabled. Set LEON_ALLOW_MUTATE=1",
@@ -998,7 +999,7 @@ class SelfMutateEngine:
         q = prop.get("quality") or {}
         if not prop.get("syntax_ok", True) or q.get("reject"):
             return {"ok": False, "error": "proposal rejected by quality/syntax", "quality": q}
-        if float(q.get("score") or 0) < min_quality and q:
+        if float(q.get("score") or 0) < min_quality and q and not force:
             return {
                 "ok": False,
                 "error": f"quality {q.get('score')} < min_quality {min_quality}",
@@ -1053,6 +1054,7 @@ class SelfMutateEngine:
             "import_check": import_report,
             "quality": q,
             "enabled": self.mutation_enabled(),
+            "forced_quality_override": bool(force and float(q.get("score") or 0) < min_quality),
             "goal": prop.get("goal"),
             "author": prop.get("author"),
         }
