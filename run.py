@@ -8,6 +8,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import subprocess
 import sys
@@ -16,6 +17,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 VENV_DIR = ROOT / ".venv"
+REQUIREMENTS = ROOT / "requirements.txt"
+STAMP = VENV_DIR / ".zenthon-requirements.sha256"
 
 
 def venv_python() -> Path:
@@ -28,14 +31,11 @@ def ensure_environment() -> Path:
         print("[setup] Lokal virtual mühit yaradılır...")
         subprocess.check_call([sys.executable, "-m", "venv", str(VENV_DIR)])
 
-    probe = subprocess.run(
-        [str(python), "-c", "import fastapi, numpy, pandas, pydantic, uvicorn"],
-        cwd=ROOT,
-        check=False,
-    )
-    if probe.returncode != 0:
-        print("[setup] Asılılıqlar quraşdırılır...")
-        subprocess.check_call([str(python), "-m", "pip", "install", "-r", "requirements.txt"], cwd=ROOT)
+    fingerprint = hashlib.sha256(REQUIREMENTS.read_bytes()).hexdigest()
+    if not STAMP.exists() or STAMP.read_text(encoding="utf-8").strip() != fingerprint:
+        print("[setup] Bütün layihə asılılıqları lokal .venv mühitinə quraşdırılır...")
+        subprocess.check_call([str(python), "-m", "pip", "install", "-r", str(REQUIREMENTS)], cwd=ROOT)
+        STAMP.write_text(fingerprint, encoding="utf-8")
     return python
 
 
