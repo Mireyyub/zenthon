@@ -48,6 +48,11 @@ class OrchestrateRequest(BaseModel):
     context: Dict[str, Any] = Field(default_factory=dict)
 
 
+class SelfImproveRequest(BaseModel):
+    topic: str = "general"
+    apply: bool = False
+
+
 class TeachRequest(BaseModel):
     lesson_id: Optional[str] = None
     volume_id: Optional[str] = "01"
@@ -93,6 +98,7 @@ def root() -> Dict[str, Any]:
             "/cycle",
             "/crew",
             "/orchestrate",
+            "/self-improve/sync",
             "/teach",
             "/volumes",
             "/media/understand",
@@ -185,6 +191,16 @@ def orchestrate_endpoint(req: OrchestrateRequest) -> Dict[str, Any]:
         from agents.unified_orchestrator import unified_orchestrator
 
         return unified_orchestrator.run(req.task, agents=req.agents, context=req.context)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/self-improve/sync")
+def self_improve_sync_endpoint(req: SelfImproveRequest) -> Dict[str, Any]:
+    try:
+        from brain.self_learning_sync import sync_self_learning
+
+        return sync_self_learning(topic=req.topic, apply=req.apply)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
