@@ -198,16 +198,15 @@ class DAGRunner:
     ) -> DAGRun:
         """Sync wrapper for non-async contexts."""
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    return pool.submit(
-                        lambda: asyncio.run(self.run_dag(nodes, run_id, on_event))
-                    ).result()
+            asyncio.get_running_loop()
         except RuntimeError:
-            pass
-        return asyncio.run(self.run_dag(nodes, run_id, on_event))
+            return asyncio.run(self.run_dag(nodes, run_id, on_event))
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(
+                lambda: asyncio.run(self.run_dag(nodes, run_id, on_event))
+            ).result()
 
     def get_history(self) -> list[dict]:
         return [

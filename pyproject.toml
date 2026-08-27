@@ -90,7 +90,7 @@ ensure_newline_before_comments = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-addopts = "-v --cov=core --cov=data --cov=models --cov=training --cov=inference --cov=interfaces --cov=utils"
+addopts = "-v"
 
 [tool.flake8]
 max-line-length = 88

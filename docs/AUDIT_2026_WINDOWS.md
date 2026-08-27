@@ -29,7 +29,7 @@
 | Tüm Python kaynaklarının derlenmesi | **Geçti** | Başlangıçta `inference/explainers/shap_explainer.py` içinde geçersiz `\\n` karakteri bulundu ve düzeltildi. Ardından `compileall` temiz geçti. |
 | Proje yerel kurulumu | **Geçti** | `python3 run.py --check`, proje içi `.venv` oluşturarak `requirements.txt` bağımlılıklarını kurdu. |
 | Çekirdek smoke akışı | **Geçti / LLM kontrolü** | `run.py --check` ile başlatma, `ReasoningEngine` yolu, öğretme, kalıcılık ve checkpoint adımları başarılı oldu. Yerel LLM endpointi erişilemedi; uygulama kontrollü fallback ile `overall_ok: true` sonucu verdi. |
-| Tam Python test paketi | **Geçti** | İzole Python 3.12 ortamında `164 passed, 10 warnings in 9.12s`. Uyarıların ikisi legacy ML alanları, üçünün kaynağı gelecekte kaldırılacak Pillow `getdata()` API'sidir. |
+| Tam Python test paketi | **Geçti** | İzole Python 3.12 ortamında `164 passed, 3 warnings in 5.30s`. İki uyarı bilinçli legacy ML importları, biri FastAPI test istemcisinin üçüncü taraf kaldırılma uyarısıdır. |
 | RAG Azerbaycan Türkçesi çekim geri çağırması | **Geçti** | Güvenli, en az dört karakterli iki yönlü kök/prefix eşleme eklendi; `meyvə` sorgusu `meyvədir` içeren bağlamı geri çağırıyor. Kısa terimler kapsam dışı tutularak yanlış pozitif riski sınırlandı. |
 | Görsel no-path hata sözleşmesi | **Geçti** | Bir dosya yolu olmadan görseli betimleme isteği artık açıkça desteklenmediğini bildiriyor; eksik girdiyi başarılı bir analiz gibi göstermiyor. |
 | Yerel event read model ve API | **Geçti** | Kalıcılık, sınırlandırma, cursor, diskten yeniden yükleme redaksiyonu, loopback reddi ve HTTP projection testleri başarılıdır; read model ham prompt, cevap veya reasoning saklamaz. |
@@ -38,6 +38,8 @@
 | Geçici günlük dizini dayanıklılığı | **Geçti** | Testte silinen geçici günlüğe bağlı `FileHandler` bir sonraki yazımdan önce kaldırılıyor; bu sayede masaüstü runtime sonrasında kalan testler `FileNotFoundError` ile bozulmuyor. |
 | İlk çalıştırma profili | **Geçti / GUI CHECK** | Atomic yerel ayar kaydı, data konumu/model/event tercihi, dosya-sistemi kökü reddi, güvenli hardware önerisi ve nonlocal LLM endpointinin ilk-run ekranından hiç sorgulanmaması test edildi. GUI sihirbazı başsız ortamda görsel olarak doğrulanmadı. |
 | Paket giriş ve bridge smoke | **Geçti (kaynak çalışma zamanı)** | Paket girişinin `--smoke` ve `--bridge-smoke` kipleri, gerçek dinamik loopback portunda çalışan API ile test edildi. Windows EXE/NSIS artefaktı bu Linux ortamında üretilemez; Windows CI ve bağlı Windows 11 smoke kapısı eklendi. |
+| GitHub cognitive CI uyumluluğu | **Düzeltildi / yeniden çalışması bekleniyor** | Global pytest coverage parametreleri, hafif cognitive workflow'da `pytest-cov` kurulmadığı için testi toplamayı engelliyordu. Coverage, eklentiyi açıkça kuran CI job'una bırakıldı; local cognitive komutu 31 test ile geçti. |
+| Python 3.12 event-loop uyumluluğu | **Geçti** | `ThinkingBrain` ve DAG sync adapterı artık yalnız aktif bir event loop varsa async event yayını oluşturuyor; uygulama kaynaklı `get_event_loop()` uyarıları ortadan kalktı. |
 
 ## Mimari Harita
 
@@ -110,4 +112,4 @@ Leon'un mevcut kaynaklarını yeniden yazmadan korumak doğrudur. İlk uygulama 
 | P1 | Windows EXE ve kurulum smoke testi | PyInstaller/NSIS scripti, packaged `--smoke`/`--bridge-smoke` kipleri ve artifact CI kapısı mevcut | Windows 11'de EXE, installer, uninstall ve optional autostart testini çalıştır; gerektiğinde Microsoft SmartScreen/kurum allowlist'i için imzalama planla |
 | P1 | Bağımlılık profili kabul testi | Core/ML/Vision/Full gereksinim dosyaları ve command-line profil seçimi var | Temiz Windows makinede core ve full kurulum süresi/boyutu/başlatma ölçümü |
 | P1 | Bağımlılık katmanlandırması | Mevcut runtime çalışıyor | Çekirdek, vision ve geliştirme extras ayrımı ile düşük donanım kurulum testi |
-| P2 | Pillow API kaldırılma uyarısı | Mevcut testler başarılı | `getdata()` çağrılarını desteklenen `get_flattened_data()` eşdeğeriyle değiştirme ve görüntü regresyon testi |
+| P2 | Test istemcisi kaldırılma uyarısı | Uygulama kaynaklı Pillow ve asyncio uyarıları kaldırıldı; testler başarılı | FastAPI/Starlette ekosistemi güncel bir test istemcisi önerdiğinde sürüm uyumluluk denetimi |

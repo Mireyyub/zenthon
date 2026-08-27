@@ -251,18 +251,22 @@ class ThinkingBrain:
         )
 
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop is not None:
+            try:
                 from core.async_event_bus import async_event_bus
-                asyncio.create_task(
+
+                loop.create_task(
                     async_event_bus.publish(
                         "BrainCycleCompleted",
                         {"cycle": self.state.cycle_count, "mode": selected_mode, "confidence": confidence, "name": self.name},
                         source="brain",
                     )
                 )
-        except Exception:
-            pass
+            except Exception:
+                pass
 
         result = {
             "cycle": self.state.cycle_count,
