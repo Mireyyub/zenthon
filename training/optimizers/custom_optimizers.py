@@ -6,7 +6,7 @@ Implements custom optimization algorithms for training neural networks.
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from typing import List, Optional, Dict, Any
+from typing import Any, Callable, Dict, List, Optional
 import numpy as np
 
 from core.logger import logger
@@ -74,12 +74,15 @@ class AdamW(optim.Optimizer):
 
                 grad = p.grad.data
 
-                # Decay the first and second moment running average coefficient
-                if 'm' not in self.state[p]:
-                    self.state[p]['m'] = torch.zeros_like(p.data)
-                    self.state[p]['v'] = torch.zeros_like(p.data)
+                # Initialize and advance optimizer state before bias correction.
+                state = self.state[p]
+                if 'm' not in state:
+                    state['step'] = 0
+                    state['m'] = torch.zeros_like(p.data)
+                    state['v'] = torch.zeros_like(p.data)
+                state['step'] += 1
 
-                m, v = self.state[p]['m'], self.state[p]['v']
+                m, v = state['m'], state['v']
                 beta1, beta2 = group['betas']
 
                 m.mul_(beta1).add_(grad, alpha=1 - beta1)
@@ -93,10 +96,10 @@ class AdamW(optim.Optimizer):
                     v = v_max
 
                 # Compute bias-corrected first moment estimate
-                m_hat = m / (1 - beta1 ** self.state[p]['step'])
+                m_hat = m / (1 - beta1 ** state['step'])
 
                 # Compute bias-corrected second raw moment estimate
-                v_hat = v / (1 - beta2 ** self.state[p]['step'])
+                v_hat = v / (1 - beta2 ** state['step'])
 
                 # Update parameters
                 p.data.addcdiv_(m_hat, torch.sqrt(v_hat).add_(group['eps']), value=-group['lr'])

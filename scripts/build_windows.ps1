@@ -1,5 +1,6 @@
 param(
-    [switch]$Installer
+    [switch]$Installer,
+    [switch]$SkipSmoke
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,11 +18,27 @@ if (-not (Test-Path $BuildPython)) {
 }
 
 & $BuildPython -m pip install --upgrade pip
-& $BuildPython -m pip install -r requirements.txt -r requirements-windows-build.txt
+& $BuildPython -m pip install -r requirements-full.txt -r requirements-windows-build.txt
+& $BuildPython -m compileall -q .
 & $BuildPython -m PyInstaller --noconfirm --clean --windowed --name Zenthon `
-    --add-data "curriculum;curriculum" --add-data "data;data" `
-    --collect-data interfaces --hidden-import tkinter --hidden-import PIL `
+    --add-data "curriculum;curriculum" --add-data "data\leon\.gitkeep;data\leon" `
+    --collect-data interfaces --collect-submodules interfaces --collect-submodules core `
+    --hidden-import tkinter --hidden-import PIL `
     zenthon_desktop.py
+
+$ExePath = Join-Path $Root "dist\Zenthon\Zenthon.exe"
+if (-not (Test-Path $ExePath)) {
+    throw "PyInstaller output was not found: $ExePath"
+}
+
+if (-not $SkipSmoke) {
+    Write-Host "Running packaged core smoke..."
+    & $ExePath --smoke
+    if ($LASTEXITCODE -ne 0) { throw "Packaged core smoke failed with exit code $LASTEXITCODE" }
+    Write-Host "Running packaged loopback bridge smoke..."
+    & $ExePath --bridge-smoke
+    if ($LASTEXITCODE -ne 0) { throw "Packaged bridge smoke failed with exit code $LASTEXITCODE" }
+}
 
 if ($Installer) {
     $MakeNsis = (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
@@ -37,4 +54,4 @@ if ($Installer) {
     & $MakeNsis "$Root\windows\Zenthon.nsi"
 }
 
-Write-Host "Build tamamlandı: $Root\dist\Zenthon\Zenthon.exe"
+Write-Host "Build tamamlandı: $ExePath"

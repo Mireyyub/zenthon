@@ -61,10 +61,10 @@ def local_analyze(path: str) -> Dict[str, Any]:
         stddev = [round(x, 1) for x in stat.stddev]
 
         small = rgb.resize((4, 4))
-        dom = [tuple(px) for px in small.getdata()]
+        dom = [tuple(px) for px in small.get_flattened_data()]
         q = rgb.resize((32, 32))
         counts: Dict[Tuple[int, int, int], int] = {}
-        for px in q.getdata():
+        for px in q.get_flattened_data():
             key = (px[0] // 32 * 32, px[1] // 32 * 32, px[2] // 32 * 32)
             counts[key] = counts.get(key, 0) + 1
         top_colors = sorted(counts.items(), key=lambda x: -x[1])[:5]

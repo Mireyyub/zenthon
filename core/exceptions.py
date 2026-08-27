@@ -48,3 +48,17 @@ class MemoryError(ZenthonError):
 class SecurityError(ZenthonError):
     def __init__(self, message: str = "Security violation"):
         super().__init__(message, code="SECURITY_ERROR")
+
+
+class ToolContractError(ZenthonError):
+    def __init__(self, message: str = "Invalid tool contract"):
+        super().__init__(message, code="TOOL_CONTRACT_ERROR")
+
+
+class ToolApprovalRequiredError(SecurityError):
+    def __init__(self, tool_name: str):
+        ZenthonError.__init__(
+            self,
+            f"Explicit approval is required before running tool: {tool_name}",
+            code="TOOL_APPROVAL_REQUIRED",
+        )

@@ -44,7 +44,7 @@ class KernelSHAP:
         self.background_data = background_data
         self.n_samples = n_samples
         self.random_state = random_state
-        self.random = np.random.RandomState(random_state)\n
+        self.random = np.random.RandomState(random_state)
         logger.info(
             f"KernelSHAP initialized: n_samples={n_samples}"
         )

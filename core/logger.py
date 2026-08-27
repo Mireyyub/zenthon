@@ -7,6 +7,7 @@ import logging
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from core.config import config
@@ -61,24 +62,45 @@ class AILogger:
             file_handler.setFormatter(formatter)
             self.logger.addHandler(file_handler)
 
+    def _prune_stale_file_handlers(self) -> None:
+        """Remove handlers whose temporary parent directory was deleted."""
+        for handler in list(self.logger.handlers):
+            if not isinstance(handler, logging.FileHandler):
+                continue
+            try:
+                if Path(handler.baseFilename).parent.exists():
+                    continue
+            except (OSError, TypeError):
+                pass
+            self.logger.removeHandler(handler)
+            try:
+                handler.close()
+            except OSError:
+                pass
+
     def debug(self, message: str) -> None:
         """Log debug message."""
+        self._prune_stale_file_handlers()
         self.logger.debug(message)
 
     def info(self, message: str) -> None:
         """Log info message."""
+        self._prune_stale_file_handlers()
         self.logger.info(message)
 
     def warning(self, message: str) -> None:
         """Log warning message."""
+        self._prune_stale_file_handlers()
         self.logger.warning(message)
 
     def error(self, message: str) -> None:
         """Log error message."""
+        self._prune_stale_file_handlers()
         self.logger.error(message)
 
     def critical(self, message: str) -> None:
         """Log critical message."""
+        self._prune_stale_file_handlers()
         self.logger.critical(message)
 
     def log_metrics(self, metrics: dict, prefix: str = "Metrics") -> None:

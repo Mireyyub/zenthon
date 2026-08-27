@@ -6,16 +6,47 @@ Leon FastAPI – cognitive + multimodal + crew endpoints.
 
 from __future__ import annotations
 
+import ipaddress
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
+
+from core.exceptions import SecurityError, ToolApprovalRequiredError, ZenthonError
+from core.logger import logger
 
 app = FastAPI(
     title="Leon AI Platform",
     description="Cognitive API: think / cycle / crew / teach / media",
     version="0.8.0",
 )
+
+
+def _raise_operation_error(error: Exception) -> None:
+    """Map expected local failures without exposing raw internal details."""
+    if isinstance(error, ToolApprovalRequiredError):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "message": error.message},
+        ) from error
+    if isinstance(error, SecurityError):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": error.code, "message": error.message},
+        ) from error
+    if isinstance(error, ZenthonError):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": error.code, "message": error.message},
+        ) from error
+    logger.error(f"Unhandled local API error: {type(error).__name__}: {error}")
+    raise HTTPException(
+        status_code=500,
+        detail={
+            "code": "INTERNAL_OPERATION_ERROR",
+            "message": "The local operation could not be completed. Inspect the local application log.",
+        },
+    ) from error
 
 
 class ThinkRequest(BaseModel):
@@ -94,6 +125,7 @@ def root() -> Dict[str, Any]:
             "/health",
             "/status",
             "/native-core/status",
+            "/native-core/events",
             "/think",
             "/reason",
             "/cycle",
@@ -123,7 +155,7 @@ def status() -> Dict[str, Any]:
 
         return leon_status()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_operation_error(e)
 
 
 @app.get("/native-core/status")
@@ -132,6 +164,35 @@ def native_core_status() -> Dict[str, Any]:
     from native_core import health_report
 
     return health_report()
+
+
+def _require_loopback(request: Request) -> None:
+    """Keep desktop bridge telemetry on the local machine by default."""
+    host = request.client.host if request.client else "127.0.0.1"
+    if host == "testclient":
+        return
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return
+    except ValueError:
+        pass
+    raise HTTPException(
+        status_code=403,
+        detail={"code": "LOCAL_ONLY", "message": "This desktop event feed accepts loopback clients only."},
+    )
+
+
+@app.get("/native-core/events")
+def native_core_events(
+    request: Request,
+    limit: int = 50,
+    after_event_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Serve bounded, redacted operational events to the local desktop bridge."""
+    _require_loopback(request)
+    from core.event_bus import event_bus
+
+    return event_bus.get_public_feed(limit=limit, after_event_id=after_event_id)
 
 
 @app.post("/think")
@@ -161,7 +222,7 @@ def think(req: ThinkRequest) -> Dict[str, Any]:
             "reasoning_mode": result.get("reasoning_mode"),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_operation_error(e)
 
 
 @app.post("/cycle")
@@ -179,7 +240,7 @@ def cycle_endpoint(req: CycleRequest) -> Dict[str, Any]:
             reflect=req.reflect,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_operation_error(e)
 
 
 @app.post("/crew")
@@ -190,7 +251,7 @@ def crew_endpoint(req: CrewRequest) -> Dict[str, Any]:
         tasks = [{"description": req.goal, "agent": a} for a in (req.agents or ["react"])]
         return run_crew(req.goal, tasks, mode=req.mode)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_operation_error(e)
 
 
 @app.post("/orchestrate")
@@ -201,7 +262,7 @@ def orchestrate_endpoint(req: OrchestrateRequest) -> Dict[str, Any]:
 
         return unified_orchestrator.run(req.task, agents=req.agents, context=req.context)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_operation_error(e)
 
 
 @app.post("/self-improve/sync")
@@ -211,7 +272,7 @@ def self_improve_sync_endpoint(req: SelfImproveRequest) -> Dict[str, Any]:
 
         return sync_self_learning(topic=req.topic, apply=req.apply)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_operation_error(e)
 
 
 @app.post("/reason")
@@ -226,7 +287,7 @@ def reason(req: ReasonRequest) -> Dict[str, Any]:
             use_brain=req.use_brain,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_operation_error(e)
 
 
 @app.post("/teach")
@@ -246,7 +307,7 @@ def teach(req: TeachRequest) -> Dict[str, Any]:
             pass
         return report
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_operation_error(e)
 
 
 @app.get("/volumes")
@@ -263,7 +324,7 @@ def volumes() -> Dict[str, Any]:
                 items.append({"volume": vid, "error": str(e)})
         return {"volumes": items}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_operation_error(e)
 
 
 @app.post("/media/understand")
@@ -275,7 +336,7 @@ def media_understand(req: MediaUnderstandRequest) -> Dict[str, Any]:
             req.path, question=req.question, use_vlm=req.use_vlm, inject_facts=False
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_operation_error(e)
 
 
 @app.post("/media/generate")
@@ -285,7 +346,7 @@ def media_generate(req: ImageGenerateRequest) -> Dict[str, Any]:
 
         return generate_image(req.prompt, width=req.width, height=req.height, style=req.style, seed=req.seed)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_operation_error(e)
 
 
 @app.post("/audio")
@@ -305,7 +366,7 @@ def audio_endpoint(req: SpeechRequest) -> Dict[str, Any]:
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _raise_operation_error(e)
 
 
 def run(host: str = "0.0.0.0", port: int = 8000) -> None:

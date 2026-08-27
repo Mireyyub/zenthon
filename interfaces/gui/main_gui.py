@@ -8,16 +8,182 @@ import json
 import queue
 import threading
 import tkinter as tk
-from tkinter import messagebox, scrolledtext, ttk
-from typing import Any, Dict, Optional
+from tkinter import filedialog, messagebox, scrolledtext, ttk
+from typing import Any, Callable, Dict, Optional
 
 from core.logger import logger
 from interfaces.gui.command_center import infer_operation_mode
 
 
+class FirstRunWizard(tk.Toplevel):
+    """Non-blocking local profile wizard shown before the combined runtime starts."""
+
+    def __init__(
+        self,
+        parent: tk.Tk,
+        on_complete: Callable[[], None],
+        on_skip: Callable[[], None],
+    ):
+        super().__init__(parent)
+        from interfaces.desktop.first_run import FirstRunService
+
+        self._service = FirstRunService()
+        self._on_complete = on_complete
+        self._on_skip = on_skip
+        self._hardware = self._service.hardware()
+        current = self._service.current_profile()
+        self.title("Zenthon · Local Setup")
+        self.geometry("680x510")
+        self.minsize(620, 450)
+        self.configure(background="#06101D")
+        self.transient(parent)
+        self.protocol("WM_DELETE_WINDOW", self._skip)
+
+        self.data_dir = tk.StringVar(value=current.data_dir)
+        self.model = tk.StringVar(value=current.model or self._hardware.recommended_model)
+        self.performance_mode = tk.StringVar(value=current.performance_mode)
+        self.voice_consent = tk.BooleanVar(value=current.voice_consent)
+        self.event_persist = tk.BooleanVar(value=current.event_persist)
+        self.model_status = tk.StringVar(value="Model status is being checked locally…")
+        self.save_status = tk.StringVar(value="No model will be downloaded or started by this setup screen.")
+        self._build()
+        self._refresh_model_status()
+
+    def _build(self) -> None:
+        header = ttk.Frame(self, style="Panel.TFrame")
+        header.pack(fill=tk.X, padx=14, pady=(14, 8))
+        ttk.Label(header, text="FIRST-RUN LOCAL PROFILE", style="Hud.TLabel").pack(anchor=tk.W, padx=12, pady=(10, 1))
+        ttk.Label(header, text="Configure before the Command Center starts", style="Title.TLabel").pack(anchor=tk.W, padx=12)
+        ttk.Label(
+            header,
+            text="Settings are stored locally. No cloud account, model download, or microphone access is enabled automatically.",
+            style="Subtitle.TLabel",
+        ).pack(anchor=tk.W, padx=12, pady=(2, 10))
+
+        pages = ttk.Notebook(self)
+        pages.pack(fill=tk.BOTH, expand=True, padx=14, pady=6)
+        self._build_hardware_page(pages)
+        self._build_model_storage_page(pages)
+        self._build_privacy_page(pages)
+
+        controls = ttk.Frame(self)
+        controls.pack(fill=tk.X, padx=14, pady=(4, 14))
+        ttk.Label(controls, textvariable=self.save_status, style="Subtitle.TLabel").pack(anchor=tk.W, pady=(0, 7))
+        ttk.Button(controls, text="Use defaults for now", command=self._skip).pack(side=tk.LEFT)
+        ttk.Button(controls, text="Save local profile", style="Accent.TButton", command=self._save).pack(side=tk.RIGHT)
+
+    def _build_hardware_page(self, pages: ttk.Notebook) -> None:
+        page = ttk.Frame(pages)
+        pages.add(page, text="Device")
+        ram = f"{self._hardware.memory_gb:.1f} GB" if self._hardware.memory_gb is not None else "unavailable"
+        gpu = ", ".join(self._hardware.gpu_names) if self._hardware.gpu_names else "No CUDA GPU detected"
+        details = (
+            f"Operating system: {self._hardware.os_name}\n"
+            f"Logical CPU cores: {self._hardware.cpu_count}\n"
+            f"System memory: {ram}\n"
+            f"CUDA available: {'yes' if self._hardware.cuda_available else 'no'}\n"
+            f"GPU: {gpu}\n\n"
+            f"Recommendation: {self._hardware.recommended_mode} mode with {self._hardware.recommended_model}."
+        )
+        ttk.Label(page, text="Detected hardware", style="Title.TLabel").pack(anchor=tk.W, padx=16, pady=(18, 8))
+        label = tk.Label(page, text=details, justify=tk.LEFT, anchor=tk.NW, bg="#0A1D30", fg="#D7E8FA", padx=14, pady=14)
+        label.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 16))
+
+    def _build_model_storage_page(self, pages: ttk.Notebook) -> None:
+        page = ttk.Frame(pages)
+        pages.add(page, text="Model & Storage")
+        form = ttk.Frame(page)
+        form.pack(fill=tk.X, padx=16, pady=18)
+        ttk.Label(form, text="Performance mode:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Combobox(
+            form,
+            textvariable=self.performance_mode,
+            values=["low-resource", "balanced", "performance"],
+            state="readonly",
+            width=22,
+        ).grid(row=0, column=1, sticky=tk.EW, padx=(10, 0), pady=5)
+        ttk.Label(form, text="Local Ollama model:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(form, textvariable=self.model, width=28).grid(row=1, column=1, sticky=tk.EW, padx=(10, 0), pady=5)
+        ttk.Label(form, text="Data location:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(form, textvariable=self.data_dir, width=28).grid(row=2, column=1, sticky=tk.EW, padx=(10, 0), pady=5)
+        ttk.Button(form, text="Choose…", command=self._choose_data_dir).grid(row=2, column=2, padx=(7, 0), pady=5)
+        form.columnconfigure(1, weight=1)
+        ttk.Label(page, textvariable=self.model_status, style="Subtitle.TLabel", wraplength=600).pack(anchor=tk.W, padx=16, pady=(6, 16))
+
+    def _build_privacy_page(self, pages: ttk.Notebook) -> None:
+        page = ttk.Frame(pages)
+        pages.add(page, text="Privacy")
+        ttk.Label(page, text="Local permissions", style="Title.TLabel").pack(anchor=tk.W, padx=16, pady=(18, 8))
+        ttk.Checkbutton(
+            page,
+            text="Keep a bounded local operational event history",
+            variable=self.event_persist,
+        ).pack(anchor=tk.W, padx=16, pady=5)
+        ttk.Checkbutton(
+            page,
+            text="Allow voice features when the operator explicitly uses them",
+            variable=self.voice_consent,
+        ).pack(anchor=tk.W, padx=16, pady=5)
+        ttk.Label(
+            page,
+            text="Voice permission is off by default. This switch records consent only; it does not start recording or install a speech model.",
+            style="Subtitle.TLabel",
+            wraplength=600,
+        ).pack(anchor=tk.W, padx=16, pady=(10, 0))
+
+    def _choose_data_dir(self) -> None:
+        selected = filedialog.askdirectory(parent=self, initialdir=self.data_dir.get() or None)
+        if selected:
+            self.data_dir.set(selected)
+
+    def _refresh_model_status(self) -> None:
+        def worker() -> None:
+            from interfaces.desktop.first_run import model_health
+
+            report = model_health()
+            if report.get("reachable"):
+                models = report.get("models") or []
+                model = self.model.get().strip()
+                message = f"Local Ollama service is reachable. Selected model {'is available' if model in models else 'is not installed'}: {model or 'not selected'}"
+            else:
+                message = "Local Ollama service is unavailable. Zenthon will use its deterministic fallback until you start Ollama and install a model."
+            self.after(0, lambda: self.model_status.set(message))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _save(self) -> None:
+        from interfaces.desktop.first_run import FirstRunProfile
+
+        try:
+            self._service.apply(
+                FirstRunProfile(
+                    data_dir=self.data_dir.get(),
+                    model=self.model.get(),
+                    performance_mode=self.performance_mode.get(),
+                    voice_consent=self.voice_consent.get(),
+                    event_persist=self.event_persist.get(),
+                )
+            )
+        except Exception as error:
+            self.save_status.set(f"Local profile was not saved: {error}")
+            return
+        self.destroy()
+        self._on_complete()
+
+    def _skip(self) -> None:
+        try:
+            self._service.apply(self._service.current_profile())
+        except Exception as error:
+            self.save_status.set(f"Defaults could not be saved: {error}")
+            return
+        self.destroy()
+        self._on_skip()
+
+
 class LeonApp:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, api_endpoint: Optional[str] = None):
         self.root = root
+        self.api_endpoint = api_endpoint
         self.root.title("Zenthon AI Command Center")
         self.root.geometry("1180x760")
         self.root.minsize(920, 620)
@@ -78,10 +244,15 @@ class LeonApp:
         ttk.Label(identity, text="Mission plan · agent execution · safe improvement observability", style="Subtitle.TLabel").pack(anchor=tk.W)
         status = ttk.Frame(header, style="Panel.TFrame")
         status.pack(side=tk.RIGHT, padx=14, pady=14)
-        self.header_status = ttk.Label(status, text="● LOCAL CORE READY", style="Hud.TLabel")
+        runtime_label = "● LOCAL CORE READY"
+        if self.api_endpoint:
+            runtime_label = f"● LOCAL CORE + API READY"
+        self.header_status = ttk.Label(status, text=runtime_label, style="Hud.TLabel")
         self.header_status.pack(anchor=tk.E)
         self.native_status = ttk.Label(status, text=self._native_core_status_text(), style="Subtitle.TLabel")
         self.native_status.pack(anchor=tk.E, pady=(3, 0))
+        if self.api_endpoint:
+            ttk.Label(status, text=f"Loopback API · {self.api_endpoint}", style="Subtitle.TLabel").pack(anchor=tk.E, pady=(3, 0))
 
     @staticmethod
     def _native_core_status_text() -> str:
@@ -112,6 +283,8 @@ class LeonApp:
         self._create_teach_tab()
         self._create_improve_tab()
         self._create_status_tab()
+        self._create_operations_tab()
+        self._create_local_settings_tab()
 
     def _create_command_center_tab(self) -> None:
         frame = ttk.Frame(self.notebook)
@@ -335,6 +508,144 @@ class LeonApp:
         self.status_output = scrolledtext.ScrolledText(frame, wrap=tk.WORD)
         self.status_output.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
+    def _create_operations_tab(self) -> None:
+        frame = ttk.Frame(self.notebook)
+        self.notebook.add(frame, text="Operations")
+
+        controls = ttk.Frame(frame)
+        controls.pack(fill=tk.X, padx=8, pady=(8, 4))
+        self.operations_summary = ttk.Label(
+            controls,
+            text="Operational data is loading from the local read model…",
+            style="Subtitle.TLabel",
+        )
+        self.operations_summary.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(controls, text="Refresh", command=self._refresh_operations).pack(side=tk.RIGHT)
+
+        event_box = ttk.LabelFrame(frame, text="Redacted Local Event Feed")
+        event_box.pack(fill=tk.BOTH, expand=True, padx=8, pady=(4, 8))
+        columns = ("time", "source", "event", "severity", "detail")
+        self.operations_tree = ttk.Treeview(event_box, columns=columns, show="headings", height=18)
+        headings = {"time": "Time", "source": "Source", "event": "Event", "severity": "State", "detail": "Safe detail"}
+        widths = {"time": 180, "source": 110, "event": 180, "severity": 75, "detail": 430}
+        for column in columns:
+            self.operations_tree.heading(column, text=headings[column])
+            self.operations_tree.column(column, width=widths[column], anchor=tk.W, stretch=column == "detail")
+        scrollbar = ttk.Scrollbar(event_box, orient=tk.VERTICAL, command=self.operations_tree.yview)
+        self.operations_tree.configure(yscrollcommand=scrollbar.set)
+        self.operations_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(8, 0), pady=8)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 8), pady=8)
+        self.operations_tree.tag_configure("error", foreground="#FF9AA2")
+        self.operations_tree.tag_configure("warning", foreground="#F6C760")
+        self.operations_tree.tag_configure("info", foreground="#BFD5EA")
+        self._operations_refreshing = False
+        self._refresh_operations()
+
+    def _refresh_operations(self) -> None:
+        if getattr(self, "_operations_refreshing", False):
+            return
+        self._operations_refreshing = True
+
+        def worker() -> None:
+            try:
+                from agents.manager import agent_manager
+                from core.event_bus import event_bus
+                from core.kernel import kernel
+                from memory.vector_memory import VectorMemory
+
+                feed = event_bus.get_public_feed(limit=60)
+                snapshot = {
+                    "events": feed.get("events", []),
+                    "event_limit": feed.get("max_records"),
+                    "agents": len(agent_manager.list_agents()),
+                    "tasks": len(kernel.status().get("tasks") or []),
+                    "memory": VectorMemory().count(),
+                }
+                self.root.after(0, lambda: self._render_operations(snapshot))
+            except Exception as error:
+                self.root.after(0, lambda: self.operations_summary.config(text=f"Operations data unavailable: {error}"))
+            finally:
+                self.root.after(0, lambda: setattr(self, "_operations_refreshing", False))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _render_operations(self, snapshot: Dict[str, Any]) -> None:
+        if not hasattr(self, "operations_tree"):
+            return
+        for row in self.operations_tree.get_children():
+            self.operations_tree.delete(row)
+        for event in reversed(snapshot.get("events", [])):
+            data = event.get("data") or {}
+            detail = json.dumps(data, ensure_ascii=False, default=str) if data else "—"
+            timestamp = str(event.get("timestamp") or "").replace("T", " ").replace("Z", " UTC")
+            severity = str(event.get("severity") or "info")
+            self.operations_tree.insert(
+                "",
+                tk.END,
+                values=(timestamp, event.get("source"), event.get("name"), severity.upper(), detail[:300]),
+                tags=(severity,),
+            )
+        self.operations_summary.config(
+            text=(
+                f"{len(snapshot.get('events', []))} visible events / {snapshot.get('event_limit')} retained · "
+                f"{snapshot.get('agents')} active agents · {snapshot.get('tasks')} scheduled tasks · "
+                f"vector records: {snapshot.get('memory')}"
+            )
+        )
+
+    def _create_local_settings_tab(self) -> None:
+        frame = ttk.Frame(self.notebook)
+        self.notebook.add(frame, text="Local Setup")
+
+        controls = ttk.Frame(frame)
+        controls.pack(fill=tk.X, padx=8, pady=8)
+        ttk.Button(controls, text="Reconfigure local profile", command=self._open_local_setup).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(controls, text="Refresh model & hardware", command=self._refresh_local_setup).pack(side=tk.LEFT)
+        self.local_setup_summary = ttk.Label(controls, text="Local configuration loading…", style="Subtitle.TLabel")
+        self.local_setup_summary.pack(side=tk.LEFT, padx=12)
+
+        box = ttk.LabelFrame(frame, text="Local Device, Model, Storage & Consent")
+        box.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+        self.local_setup_output = scrolledtext.ScrolledText(
+            box,
+            wrap=tk.WORD,
+            state=tk.DISABLED,
+            bg="#0A1D30",
+            fg="#D7E8FA",
+            relief=tk.FLAT,
+            padx=10,
+            pady=10,
+        )
+        self.local_setup_output.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self._refresh_local_setup()
+
+    def _open_local_setup(self) -> None:
+        def after_save() -> None:
+            self._refresh_local_setup()
+            self._append_mission_event("Local profile updated", "Model, storage and consent preferences saved locally")
+
+        FirstRunWizard(self.root, on_complete=after_save, on_skip=lambda: None)
+
+    def _refresh_local_setup(self) -> None:
+        def worker() -> None:
+            try:
+                from interfaces.desktop.first_run import FirstRunService, model_health
+
+                service = FirstRunService()
+                profile = service.current_profile().as_dict()
+                hardware = service.hardware().as_dict()
+                health = model_health()
+                report = {"profile": profile, "hardware": hardware, "model_health": health}
+                text = json.dumps(report, ensure_ascii=False, indent=2, default=str)
+                reachable = bool(health.get("reachable"))
+                summary = "Local model service reachable" if reachable else "Local model service unavailable; deterministic fallback remains active"
+                self.root.after(0, lambda: self._set_readonly_text(self.local_setup_output, text))
+                self.root.after(0, lambda: self.local_setup_summary.config(text=summary))
+            except Exception as error:
+                self.root.after(0, lambda: self.local_setup_summary.config(text=f"Local setup unavailable: {error}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _create_improve_tab(self) -> None:
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="Improve")
@@ -444,6 +755,11 @@ class LeonApp:
     def _set_text(self, widget: scrolledtext.ScrolledText, text: str) -> None:
         widget.delete("1.0", tk.END)
         widget.insert(tk.END, text)
+
+    def _set_readonly_text(self, widget: scrolledtext.ScrolledText, text: str) -> None:
+        widget.config(state=tk.NORMAL)
+        self._set_text(widget, text)
+        widget.config(state=tk.DISABLED)
 
     def _on_think(self) -> None:
         query = self.think_query.get("1.0", tk.END).strip()
@@ -598,9 +914,41 @@ class LeonApp:
         )
 
 
-def run_gui():
+def run_gui(
+    api_endpoint: Optional[str] = None,
+    on_profile_ready: Optional[Callable[[], Optional[str]]] = None,
+):
     root = tk.Tk()
-    LeonApp(root)
+    root.withdraw()
+    app_started = False
+
+    def start_app() -> None:
+        nonlocal app_started
+        if app_started:
+            return
+        endpoint = api_endpoint
+        if on_profile_ready:
+            try:
+                endpoint = on_profile_ready() or endpoint
+            except Exception as error:
+                root.deiconify()
+                messagebox.showerror("Zenthon", f"Local runtime could not start: {error}", parent=root)
+                root.destroy()
+                return
+        LeonApp(root, api_endpoint=endpoint)
+        app_started = True
+        root.deiconify()
+
+    try:
+        from interfaces.desktop.first_run import FirstRunService
+
+        if FirstRunService().should_show():
+            FirstRunWizard(root, on_complete=start_app, on_skip=start_app)
+        else:
+            start_app()
+    except Exception as error:
+        logger.warning(f"First-run profile unavailable; continuing with safe defaults: {error}")
+        start_app()
     root.mainloop()
 
 

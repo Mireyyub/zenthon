@@ -8,6 +8,35 @@ from dataclasses import dataclass, field
 from core.logger import logger
 
 
+_RISK_LEVELS = frozenset({"read", "compute", "sandbox-write", "sandbox-execution", "agent-execution"})
+
+
+@dataclass(frozen=True)
+class ToolPolicy:
+    """Tool policy metadata enforced by the shared security gate."""
+
+    risk_level: str = "read"
+    timeout_seconds: float = 10.0
+    requires_confirmation: bool = False
+    redact_argument: bool = True
+
+    def __post_init__(self) -> None:
+        from core.exceptions import ToolContractError
+
+        if self.risk_level not in _RISK_LEVELS:
+            raise ToolContractError(f"Unsupported tool risk level: {self.risk_level}")
+        if not 0.1 <= float(self.timeout_seconds) <= 600:
+            raise ToolContractError("Tool timeout must be between 0.1 and 600 seconds")
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "risk_level": self.risk_level,
+            "timeout_seconds": self.timeout_seconds,
+            "requires_confirmation": self.requires_confirmation,
+            "redact_argument": self.redact_argument,
+        }
+
+
 @dataclass
 class Tool:
     name: str
@@ -15,6 +44,7 @@ class Tool:
     func: Callable
     parameters: Dict[str, str] = field(default_factory=dict)
     production: bool = True
+    policy: ToolPolicy = field(default_factory=ToolPolicy)
 
 
 class ToolRegistry:
@@ -28,6 +58,7 @@ class ToolRegistry:
         description: str = "",
         parameters: Optional[Dict[str, str]] = None,
         production: bool = True,
+        policy: Optional[ToolPolicy] = None,
     ) -> None:
         self._tools[name] = Tool(
             name=name,
@@ -35,33 +66,30 @@ class ToolRegistry:
             func=func,
             parameters=parameters or {},
             production=production,
+            policy=policy or ToolPolicy(),
         )
         logger.info(f"ToolRegistry: registered '{name}'")
 
     def get(self, name: str) -> Optional[Tool]:
         return self._tools.get(name)
 
-    def call(self, name: str, **kwargs) -> Any:
+    def call(self, name: str, *, user: str = "agent", approved: bool = False, **kwargs) -> Any:
+        """Structured call path; it cannot skip the shared security gate."""
         tool = self._tools.get(name)
         if not tool:
             raise KeyError(f"Tool not found: {name}")
+        from security.gate import gate_tool
+
+        gate_tool(name, user=user, arg="[structured]", approved=approved)
         return tool.func(**kwargs)
 
-    def dispatch(self, name: str, arg: str = "", *, enforce_security: bool = True) -> Any:
+    def dispatch(self, name: str, arg: str = "", *, user: str = "agent", approved: bool = False) -> Any:
+        """Legacy string dispatch path with mandatory security enforcement."""
         name = (name or "").strip()
         arg = (arg or "").strip()
-        if enforce_security:
-            try:
-                from security.gate import gate_tool
+        from security.gate import gate_tool
 
-                gate_tool(name, user="agent", arg=arg)
-            except Exception as e:
-                from core.exceptions import SecurityError
-
-                if isinstance(e, SecurityError) or "SecurityError" in type(e).__name__:
-                    raise
-                if not isinstance(e, (ImportError, ModuleNotFoundError)):
-                    raise
+        gate_tool(name, user=user, arg=arg, approved=approved)
         tool = self._tools.get(name)
         if not tool:
             raise KeyError(f"Tool not found: {name}")
@@ -83,7 +111,7 @@ class ToolRegistry:
             return tool.func(path=path.strip(), op=op.strip())
         return tool.func(**{key: arg})
 
-    def list_tools(self, production_only: bool = False) -> List[Dict[str, str]]:
+    def list_tools(self, production_only: bool = False) -> List[Dict[str, Any]]:
         out = []
         for t in self._tools.values():
             if production_only and not t.production:
@@ -92,7 +120,9 @@ class ToolRegistry:
                 {
                     "name": t.name,
                     "description": t.description,
-                    "production": str(t.production),
+                    "parameters": dict(t.parameters),
+                    "production": t.production,
+                    "policy": t.policy.as_dict(),
                 }
             )
         return out
@@ -124,9 +154,16 @@ def _register_builtins():
             write_file,
             "Sandbox-a yaz (path||content)",
             {"path": "str", "content": "str"},
+            policy=ToolPolicy(risk_level="sandbox-write", timeout_seconds=5.0),
         )
         tool_registry.register("calc", calc, "Təhlükəsiz riyazi ifadə", {"expression": "str"})
-        tool_registry.register("run_python", run_python, "Məhdud Python sandbox", {"code": "str"})
+        tool_registry.register(
+            "run_python",
+            run_python,
+            "Məhdud Python sandbox",
+            {"code": "str"},
+            policy=ToolPolicy(risk_level="sandbox-execution", timeout_seconds=2.0),
+        )
     except Exception as e:
         logger.warning(f"safe_fs tools not loaded: {e}")
 
@@ -179,10 +216,19 @@ def _register_builtins():
 
         tool_registry.register("image_info", _img_info, "Şəkil meta", {"path": "str"})
         tool_registry.register(
-            "image_process", _img_process, "path||op (thumbnail|grayscale|...)", {"path": "str", "op": "str"}
+            "image_process",
+            _img_process,
+            "path||op (thumbnail|grayscale|...)",
+            {"path": "str", "op": "str"},
+            policy=ToolPolicy(risk_level="sandbox-write", timeout_seconds=20.0),
         )
         tool_registry.register(
-            "image_generate", _img_gen, "Procedural şəkil generasiya", {"prompt": "str"}, production=False
+            "image_generate",
+            _img_gen,
+            "Procedural şəkil generasiya",
+            {"prompt": "str"},
+            production=False,
+            policy=ToolPolicy(risk_level="sandbox-write", timeout_seconds=30.0),
         )
         tool_registry.register(
             "image_describe", _img_desc, "Ollama VLM təsvir", {"path": "str"}, production=False
@@ -205,10 +251,20 @@ def _register_builtins():
         tool_registry.register("audio_status", lambda: audio_available(), "Audio backend status")
         tool_registry.register("audio_info", audio_info, "WAV/audio meta", {"path": "str"})
         tool_registry.register(
-            "speech_to_text", understand_speech, "STT (whisper if installed)", {"path": "str"}, production=False
+            "speech_to_text",
+            understand_speech,
+            "STT (whisper if installed)",
+            {"path": "str"},
+            production=False,
+            policy=ToolPolicy(risk_level="compute", timeout_seconds=120.0),
         )
         tool_registry.register(
-            "text_to_speech", generate_speech, "TTS (espeak/pyttsx3 if installed)", {"text": "str"}, production=False
+            "text_to_speech",
+            generate_speech,
+            "TTS (espeak/pyttsx3 if installed)",
+            {"text": "str"},
+            production=False,
+            policy=ToolPolicy(risk_level="sandbox-write", timeout_seconds=30.0),
         )
         tool_registry.register(
             "tone_wav", lambda: make_tone_wav(), "Test sine WAV", production=False
@@ -230,7 +286,16 @@ def _register_builtins():
             )
 
         tool_registry.register(
-            "crew_run", _crew, "Mini multi-agent crew", {"prompt": "str"}, production=False
+            "crew_run",
+            _crew,
+            "Mini multi-agent crew",
+            {"prompt": "str"},
+            production=False,
+            policy=ToolPolicy(
+                risk_level="agent-execution",
+                timeout_seconds=120.0,
+                requires_confirmation=True,
+            ),
         )
     except Exception as e:
         logger.debug(f"crew tool not loaded: {e}")

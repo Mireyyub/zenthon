@@ -87,7 +87,10 @@ class VisionAgent(BaseAgent):
 
     def _describe(self, path: Optional[str], task: str, ctx: Dict) -> AgentResult:
         if not path:
-            return AgentResult(success=False, error="describe üçün path lazımdır")
+            return AgentResult(
+                success=False,
+                error="Vision analysis is not implemented without a local image path.",
+            )
         from multimodal.vision import describe_image
 
         out = describe_image(path, prompt=ctx.get("prompt") or task, model=ctx.get("model"))
