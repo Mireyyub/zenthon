@@ -39,6 +39,7 @@
 | İlk çalıştırma profili | **Geçti / GUI CHECK** | Atomic yerel ayar kaydı, data konumu/model/event tercihi, dosya-sistemi kökü reddi, güvenli hardware önerisi ve nonlocal LLM endpointinin ilk-run ekranından hiç sorgulanmaması test edildi. GUI sihirbazı başsız ortamda görsel olarak doğrulanmadı. |
 | Paket giriş ve bridge smoke | **Geçti (kaynak çalışma zamanı)** | Paket girişinin `--smoke` ve `--bridge-smoke` kipleri, gerçek dinamik loopback portunda çalışan API ile test edildi. Windows EXE/NSIS artefaktı bu Linux ortamında üretilemez; Windows CI ve bağlı Windows 11 smoke kapısı eklendi. |
 | GitHub cognitive CI uyumluluğu | **Düzeltildi / yeniden çalışması bekleniyor** | Global pytest coverage parametreleri, hafif cognitive workflow'da `pytest-cov` kurulmadığı için testi toplamayı engelliyordu. Coverage, eklentiyi açıkça kuran CI job'una bırakıldı; local cognitive komutu 31 test ile geçti. |
+| Faz doğrulama betiği CI girişi | **Düzeltildi** | `scripts/verify_phases_1_8.py` artık kendi proje kökünü doğrudan `python scripts/...` çağrısında modül yoluna ekliyor; local doğrudan çalıştırmada tüm sekiz kabul adımı geçti. |
 | Python 3.12 event-loop uyumluluğu | **Geçti** | `ThinkingBrain` ve DAG sync adapterı artık yalnız aktif bir event loop varsa async event yayını oluşturuyor; uygulama kaynaklı `get_event_loop()` uyarıları ortadan kalktı. |
 
 ## Mimari Harita
