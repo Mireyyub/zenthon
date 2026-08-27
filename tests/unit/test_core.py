@@ -4,6 +4,7 @@ Tests for config, logger, and kernel components.
 """
 
 import os
+import importlib
 from pathlib import Path
 import unittest
 import tempfile
@@ -159,28 +160,27 @@ class TestSystemKernel(unittest.TestCase):
         kernel = SystemKernel()
         self.assertIsNotNone(kernel.config)
 
-    @patch("core.kernel.psutil")
-    @patch("core.kernel.GPUtil")
-    def test_get_system_resources(self, mock_gputil, mock_psutil):
+    def test_get_system_resources(self):
         """Test getting system resources."""
-        # Mock psutil
-        mock_psutil.virtual_memory.return_value = type(
-            "obj",
-            (object,),
-            {
-                "total": 1024 ** 3,
-                "available": 512 * 1024 ** 2,
-                "used": 512 * 1024 ** 2,
-                "percent": 50.0,
-            },
-        )()
-        mock_psutil.cpu_percent.return_value = 25.0
+        kernel_module = importlib.import_module("core.kernel")
+        with patch.object(kernel_module, "psutil") as mock_psutil, patch.object(
+            kernel_module, "GPUtil"
+        ) as mock_gputil:
+            mock_psutil.virtual_memory.return_value = type(
+                "obj",
+                (object,),
+                {
+                    "total": 1024**3,
+                    "available": 512 * 1024**2,
+                    "used": 512 * 1024**2,
+                    "percent": 50.0,
+                },
+            )()
+            mock_psutil.cpu_percent.return_value = 25.0
+            mock_gputil.getGPUs.return_value = []
 
-        # Mock GPUtil
-        mock_gputil.getGPUs.return_value = []
-
-        kernel = SystemKernel()
-        resources = kernel.get_system_resources()
+            kernel = SystemKernel()
+            resources = kernel.get_system_resources()
 
         self.assertIn("cpu_percent", resources)
         self.assertIn("memory", resources)
