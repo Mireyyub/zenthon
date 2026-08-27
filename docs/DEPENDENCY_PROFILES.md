@@ -4,7 +4,7 @@ Zenthon starts from a **local-first core profile**. Heavy legacy ML and optional
 
 | Profile | Command | Includes | Intended use |
 |---|---|---|---|
-| Core | `python run.py --desktop` | FastAPI, local persistence, NumPy/Pandas, system telemetry | Default Command Center, local API, reasoning fallback |
+| Core | `python run.py --desktop` | FastAPI, local persistence, Pytest coverage support, NumPy/Pandas, system telemetry | Default Command Center, local API, reasoning fallback |
 | ML | `python run.py --desktop --with-ml` | Torch, scikit-learn, SciPy, visualisation, legacy web dependency | Local ML/training and legacy model modules |
 | Vision | `python run.py --desktop --with-vision` | Pillow and OpenCV | Local image metadata and image operations |
 | Full | `python run.py --desktop --with-all` | Core, ML and Vision | Developer or release-validation environment |
