@@ -81,14 +81,8 @@ def parse_lesson_markdown(text: str, lesson_id: str = "", source: str = "") -> D
             if nxt and not nxt.startswith("#"):
                 data["name"] = data["name"] or nxt
 
-    sections = re.split(r"\n-{5,}\n", text)
-    for sec in sections:
-        if not sec.strip():
-            continue
-        header = sec.strip().splitlines()[0].strip()
+    def apply_section(header: str, body: str) -> None:
         header_u = header.upper()
-        body = "\n".join(sec.strip().splitlines()[1:]).strip()
-
         if header_u == "GOAL":
             data["goal"] = body
         elif header_u in ("DEFINITION",):
@@ -112,6 +106,40 @@ def parse_lesson_markdown(text: str, lesson_id: str = "", source: str = "") -> D
             data["concepts"].append(_parse_concept(header_u, body))
         elif header_u == "SELF TEST":
             data["self_tests"] = _parse_self_tests(body)
+
+    sections = re.split(r"\n-{5,}\n", text)
+    for sec in sections:
+        if not sec.strip():
+            continue
+        header = sec.strip().splitlines()[0].strip()
+        body = "\n".join(sec.strip().splitlines()[1:]).strip()
+        apply_section(header, body)
+
+    # Volume 03 lessons use plain Markdown headings without dashed section
+    # separators.  Parse those headings only when the legacy section parser
+    # did not discover structured lesson content.
+    if not any((data["definition"], data["rules"], data["questions"])):
+        known_headers = {
+            "GOAL", "DEFINITION", "EXAMPLES", "NÜMUNƏLƏR",
+            "COUNTER EXAMPLES", "COUNTER_EXAMPLES", "LOGICAL RULES",
+            "LOGICAL_RULES", "RULES", "EXERCISES", "QUESTIONS", "SELF TEST",
+        }
+        active_header = ""
+        active_lines: List[str] = []
+
+        def flush_markdown_section() -> None:
+            if active_header:
+                apply_section(active_header, "\n".join(active_lines).strip())
+
+        for raw_line in lines:
+            candidate = raw_line.strip().lstrip("#").strip().upper()
+            if candidate in known_headers:
+                flush_markdown_section()
+                active_header = candidate
+                active_lines = []
+            elif active_header:
+                active_lines.append(raw_line)
+        flush_markdown_section()
 
     # Attach examples to first concept if present
     if data["examples"] and data["concepts"]:

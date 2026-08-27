@@ -48,7 +48,18 @@ class SupervisedTrainer:
         self.optimizer = optimizer
         self.criterion = criterion
         self.device = device or kernel.set_device()
-        self.metrics = metrics or ["accuracy"]
+
+        # Infer the task from the model output before selecting defaults.  The
+        # former unconditional accuracy default attempted classification
+        # metrics on continuous regression targets.
+        self.is_pytorch = isinstance(model, nn.Module)
+        self.is_classification = bool(
+            self.is_pytorch and getattr(model, "output_size", 1) > 1
+        )
+        self.metrics = metrics or (["accuracy"] if self.is_classification else ["mse"])
+        if not self.is_classification and "accuracy" in self.metrics:
+            logger.warning("Accuracy is not defined for continuous regression targets; using mse.")
+            self.metrics = [metric for metric in self.metrics if metric != "accuracy"] or ["mse"]
         self.history = {
             "loss": [],
             "val_loss": [],
@@ -56,9 +67,6 @@ class SupervisedTrainer:
         for metric in self.metrics:
             self.history[f"{metric}"] = []
             self.history[f"val_{metric}"] = []
-
-        # Determine model type
-        self.is_pytorch = isinstance(model, nn.Module)
 
         if self.is_pytorch:
             self.model.to(self.device)
@@ -146,14 +154,17 @@ class SupervisedTrainer:
 
                 # Evaluate
                 if val_loader is not None:
-                    val_loss, val_metrics = self._evaluate(val_loader)
+                    val_report = self._evaluate(val_loader)
+                    val_loss = val_report.pop("loss")
+                    val_metrics = val_report
                     self.history["val_loss"].append(val_loss)
 
                     for metric_name, metric_value in val_metrics.items():
                         self.history[f"val_{metric_name}"].append(metric_value)
 
                 # Evaluate on training data
-                train_metrics = self._evaluate(train_loader, training=True)
+                train_report = self._evaluate(train_loader, training=True)
+                train_metrics = {name: value for name, value in train_report.items() if name != "loss"}
                 for metric_name, metric_value in train_metrics.items():
                     self.history[metric_name].append(metric_value)
 

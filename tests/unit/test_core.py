@@ -4,6 +4,7 @@ Tests for config, logger, and kernel components.
 """
 
 import os
+from pathlib import Path
 import unittest
 import tempfile
 import shutil
@@ -138,6 +139,16 @@ class TestAILogger(unittest.TestCase):
         metrics = {"accuracy": 0.95, "loss": 0.05, "f1": 0.93}
         self.logger.log_metrics(metrics)
         self.logger.log_metrics(metrics, prefix="Training")
+
+    def test_stale_file_handler_is_removed_before_next_log(self):
+        stale_dir = tempfile.mkdtemp()
+        stale = AILogger(name="AI_System_stale_handler", log_dir=stale_dir, verbose=False)
+        stale.info("before cleanup")
+        shutil.rmtree(stale_dir, ignore_errors=True)
+
+        stale.info("after cleanup")
+        file_handlers = [h for h in stale.logger.handlers if hasattr(h, "baseFilename")]
+        self.assertEqual(file_handlers, [])
 
 
 class TestSystemKernel(unittest.TestCase):

@@ -36,7 +36,7 @@ Repo: https://github.com/Mireyyub/zenthon
 
 ### VS Code — tək əmr
 
-Reponu VS Code ilə açın və terminalda yalnız aşağıdakı əmri icra edin. İlk çalışmada `.venv` avtomatik yaradılır, minimal asılılıqlar quraşdırılır və API `http://127.0.0.1:8000/docs` ünvanında açılır.
+Reponu VS Code ilə açın və terminalda yalnız aşağıdakı əmri icra edin. İlk çalışmada `.venv` avtomatik yaradılır, core asılılıqlar quraşdırılır və API `http://127.0.0.1:8000/docs` ünvanında açılır.
 
 ```bash
 python run.py
@@ -44,23 +44,27 @@ python run.py
 
 VS Code içində alternativ olaraq **Terminal → Run Build Task** seçin və ya `F5` düyməsi ilə **Leon AI: Run local API** konfiqurasiyasını başladın. Core yoxlaması üçün `python run.py --check` istifadə edin.
 
-### Masaüstü tətbiqi və avtomatik başlanğıc (Linux)
+### Masaüstü tətbiqi və local bridge
 
-`python run.py --gui` ilk açılışda lokal `.venv` və layihə asılılıqlarını hazırlayır, sonra Zenthon qrafik tətbiqini açır.
+`python run.py --desktop` ilk açılışda lokal `.venv` və layihə asılılıqlarını hazırlayır, sonra Zenthon qrafik tətbiqi ilə onun local-only FastAPI bridge xidmətini birlikdə açır. Bridge yalnız `127.0.0.1` / `::1` / `localhost` üzərində dinləyir; GUI bağlandıqda bridge də nizamlı olaraq dayandırılır.
 
 ```bash
-python run.py --gui
+python run.py --desktop
 python scripts/install_desktop_linux.py --autostart
 ```
 
-İkinci əmr tətbiqi sistem menyusuna **Zenthon AI Platform** kimi əlavə edir və kompüterə daxil olarkən avtomatik başlatmanı aktivləşdirir. Qısayol və autostart qeydlərini silmək üçün `python scripts/install_desktop_linux.py --remove` işlədin.
+`--gui` köhnə uyğunluq aliasıdır və eyni birləşik desktop runtime-ı işə salır. Linux autostart əmri tətbiqi sistem menyusuna **Zenthon AI Platform** kimi əlavə edir və kompüterə daxil olarkən avtomatik başlatmanı aktivləşdirir. Qısayol və autostart qeydlərini silmək üçün `python scripts/install_desktop_linux.py --remove` işlədin.
+
+İlk desktop açılışında Zenthon yerli profil sihirbazını göstərir. Sihirbaz CPU, RAM və CUDA vəziyyətini faktiki olaraq aşkarlayır, resursa uyğun profil/model adı təklif edir, yerli data qovluğunu seçməyə imkan verir və səs funksiyaları ilə məhdud hadisə tarixçəsi üçün ayrıca istifadəçi seçimi saxlayır. Bu ekran model yükləmir, Ollama servisini başlatmır və mikrofonu açmır. Model vəziyyəti yalnız `localhost`/loopback Ollama üçün qısa yoxlanılır; servis yoxdursa deterministik fallback açıq qalır.
+
+Command Center-dakı **Operations** bölməsi məhdud, redaktə edilmiş yerli event feed, faktiki scheduler tapşırığı, aktiv agent və vektor yaddaşı xülasəsini göstərir. **Local Setup** bölməsi isə qeyd edilmiş profil, hardware və model sağlamlıq vəziyyətini yeniləməyə və sihirbazı yenidən açmağa imkan verir. Xam sorğu, cavab və reasoning məzmunu event feed-də göstərilmir.
 
 ### Windows 11 masaüstü paketi
 
 Windows 11-də tətbiqi qrafik masaüstü proqramı kimi açmaq üçün:
 
 ```powershell
-python run.py --gui
+python run.py --desktop
 ```
 
 Yayım üçün `.exe` və quraşdırıcı yaratmaq yalnız Windows-da edilir. Əvvəlcə [NSIS](https://nsis.sourceforge.io/) quraşdırın, sonra PowerShell-dən aşağıdakı əmri icra edin:
@@ -88,17 +92,21 @@ python -m interfaces.cli.main_cli system status
 python -m interfaces.cli.main_cli health
 ```
 
-### FastAPI
+### Ayrı FastAPI (inkişaf / inteqrasiya)
 
 ```bash
-uvicorn interfaces.api.main:app --host 0.0.0.0 --port 8000
+uvicorn interfaces.api.main:app --host 127.0.0.1 --port 8000
 ```
+
+`/native-core/events` yalnız loopback client-ları qəbul edir və məhdud, redaktə edilmiş əməliyyat hadisələrini qaytarır; xam sorğu, cavab və reasoning məzmunu bu feed-ə yazılmır.
 
 ### GUI
 
 ```bash
-python -m interfaces.gui.main_gui
+python -m interfaces.desktop.runtime
 ```
+
+Birbaşa `python -m interfaces.gui.main_gui` yalnız legacy GUI rejimidir və companion API-ni başlatmır.
 
 ---
 
@@ -146,12 +154,17 @@ python -m interfaces.cli.main_cli mutate write --goal "helper" --create --apply
 
 Env: `LEON_DATA_DIR`, `LEON_LLM_MODEL`, `LEON_OLLAMA_HOST`, `LEON_EMBED_MODEL`, `LEON_ALLOW_MUTATE`
 
+Əlavə local runtime parametrləri: `LEON_EVENT_PERSIST=0|1` və `LEON_EVENT_HISTORY_MAX=10..5000`. Etibarsız LLM timeout/temperature/token və event həddi dəyərləri təhlükəsiz sərhədlərə normallaşdırılır.
+
+İsteğe bağlı ML və vision paketləri ayrıca profil olaraq qurulur; profil seçimi və səbəbləri üçün [`docs/DEPENDENCY_PROFILES.md`](docs/DEPENDENCY_PROFILES.md) sənədinə baxın.
+
 ---
 
 ## Test
 
 ```bash
 pytest tests/unit/test_facts_graph_learning.py tests/unit/test_security.py tests/unit/test_self_view.py -q
+python run.py --check
 python scripts/verify_phases_1_8.py
 bash scripts/ci_eval.sh
 ```

@@ -31,13 +31,16 @@ Handler = Callable[[Event], None]
 
 
 class EventBus:
-    """Thread-safe in-process event bus."""
+    """Thread-safe event bus with a bounded, safe projection for local clients."""
 
-    def __init__(self):
+    def __init__(self, max_history: Optional[int] = None, read_model: Optional[Any] = None):
+        from core.event_store import EventReadModel
+
         self._handlers: Dict[str, List[Handler]] = defaultdict(list)
         self._lock = threading.RLock()
         self._history: List[Event] = []
-        self._max_history = 500
+        self._read_model = read_model or EventReadModel.from_config()
+        self._max_history = max_history or self._read_model.max_records
 
     def subscribe(self, event_name: str, handler: Handler) -> None:
         with self._lock:
@@ -65,6 +68,12 @@ class EventBus:
             # wildcard listeners
             handlers += list(self._handlers.get("*", []))
 
+        try:
+            self._read_model.record(event)
+        except Exception as e:
+            # Observability must not make a successful cognitive operation fail.
+            logger.warning(f"EventBus read model write failed: {e}")
+
         for h in handlers:
             try:
                 h(event)
@@ -81,10 +90,23 @@ class EventBus:
                 items = [e for e in items if e.name == event_name]
             return items[-limit:]
 
+    def get_public_feed(self, limit: int = 50, after_event_id: Optional[str] = None) -> Dict[str, Any]:
+        """Return the sanitized operational projection for GUI/API consumers."""
+        return self._read_model.feed(limit=limit, after_event_id=after_event_id)
+
+    def reconfigure_read_model(self) -> None:
+        """Apply a completed local desktop profile without restarting the process."""
+        from core.event_store import EventReadModel
+
+        with self._lock:
+            self._read_model = EventReadModel.from_config()
+            self._max_history = self._read_model.max_records
+
     def clear(self) -> None:
         with self._lock:
             self._handlers.clear()
             self._history.clear()
+            self._read_model.clear()
 
 
 # Global bus

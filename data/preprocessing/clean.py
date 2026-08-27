@@ -181,7 +181,10 @@ class DataCleaner:
 
         if method == "zscore":
             z_scores = np.abs((cleaned_data - cleaned_data.mean()) / cleaned_data.std())
-            cleaned_data[z_scores > threshold] = np.nan
+            median = cleaned_data.median()
+            mad = (cleaned_data - median).abs().median().replace(0, np.nan)
+            robust_z_scores = 0.6745 * (cleaned_data - median).abs() / mad
+            cleaned_data[(z_scores > threshold) | (robust_z_scores > threshold)] = np.nan
 
         elif method == "iqr":
             Q1 = cleaned_data.quantile(0.25)
@@ -189,7 +192,11 @@ class DataCleaner:
             IQR = Q3 - Q1
             lower_bound = Q1 - 1.5 * IQR
             upper_bound = Q3 + 1.5 * IQR
-            cleaned_data[(cleaned_data < lower_bound) | (cleaned_data > upper_bound)] = np.nan
+            median = cleaned_data.median()
+            mad = (cleaned_data - median).abs().median().replace(0, np.nan)
+            robust_z_scores = 0.6745 * (cleaned_data - median).abs() / mad
+            iqr_mask = (cleaned_data < lower_bound) | (cleaned_data > upper_bound)
+            cleaned_data[iqr_mask | (robust_z_scores > threshold)] = np.nan
 
         else:
             raise ValueError(f"Unknown method: {method}")
@@ -210,11 +217,17 @@ class DataCleaner:
         threshold: float,
     ) -> np.ndarray:
         """Handle outliers in numpy array."""
-        cleaned_data = data.copy()
+        # Outlier replacement temporarily uses NaN before median imputation.
+        # Integer arrays cannot represent NaN, so normalize the working copy to
+        # floating point without mutating the caller's data.
+        cleaned_data = np.asarray(data, dtype=float).copy()
 
         if method == "zscore":
             z_scores = np.abs((cleaned_data - np.nanmean(cleaned_data, axis=0)) / np.nanstd(cleaned_data, axis=0))
-            cleaned_data[z_scores > threshold] = np.nan
+            median = np.nanmedian(cleaned_data, axis=0)
+            mad = np.nanmedian(np.abs(cleaned_data - median), axis=0)
+            robust_z_scores = 0.6745 * np.abs(cleaned_data - median) / np.where(mad == 0, np.nan, mad)
+            cleaned_data[(z_scores > threshold) | (robust_z_scores > threshold)] = np.nan
 
         elif method == "iqr":
             Q1 = np.nanpercentile(cleaned_data, 25, axis=0)
@@ -222,7 +235,11 @@ class DataCleaner:
             IQR = Q3 - Q1
             lower_bound = Q1 - 1.5 * IQR
             upper_bound = Q3 + 1.5 * IQR
-            cleaned_data[(cleaned_data < lower_bound) | (cleaned_data > upper_bound)] = np.nan
+            median = np.nanmedian(cleaned_data, axis=0)
+            mad = np.nanmedian(np.abs(cleaned_data - median), axis=0)
+            robust_z_scores = 0.6745 * np.abs(cleaned_data - median) / np.where(mad == 0, np.nan, mad)
+            iqr_mask = (cleaned_data < lower_bound) | (cleaned_data > upper_bound)
+            cleaned_data[iqr_mask | (robust_z_scores > threshold)] = np.nan
 
         else:
             raise ValueError(f"Unknown method: {method}")

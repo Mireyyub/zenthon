@@ -46,6 +46,7 @@ site/
 # Data
 *.csv
 *.json
+data/leon/**/*.jsonl
 *.pkl
 *.npy
 *.npz

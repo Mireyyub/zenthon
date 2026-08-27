@@ -130,7 +130,22 @@ class RAGPipeline:
         scored: List[Chunk] = []
         for ch in self._chunks:
             kw = set(ch.keywords) | set(re.findall(r"[\wəıöüğçş]{3,}", ch.content.lower()))
-            overlap = len(q_words & kw)
+            # Exact matching alone misses common Azerbaijani inflections such
+            # as "meyvə" → "meyvədir".  Permit only a bounded prefix match so
+            # short terms do not create noisy retrievals.
+            overlap = sum(
+                1
+                for query_word in q_words
+                if any(
+                    query_word == candidate
+                    or (
+                        len(query_word) >= 4
+                        and len(candidate) >= 4
+                        and (candidate.startswith(query_word) or query_word.startswith(candidate))
+                    )
+                    for candidate in kw
+                )
+            )
             if overlap:
                 c = Chunk(**{**ch.__dict__, "score": float(overlap)})
                 scored.append(c)

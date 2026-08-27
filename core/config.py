@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from core.desktop_settings import load_desktop_settings
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
@@ -24,6 +26,29 @@ def _env(key: str, default: str = "", *aliases: str) -> str:
         if v is not None and str(v).strip() != "":
             return str(v).strip()
     return default
+
+
+def _as_bool(value: str, default: bool) -> bool:
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _bounded_int(value: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        return max(minimum, min(int(value), maximum))
+    except (TypeError, ValueError):
+        return default
+
+
+def _bounded_float(value: str, default: float, minimum: float, maximum: float) -> float:
+    try:
+        return max(minimum, min(float(value), maximum))
+    except (TypeError, ValueError):
+        return default
 
 
 @dataclass
@@ -125,11 +150,20 @@ class TrainingConfig:
 
 
 @dataclass
+class EventSettings:
+    """Limits for the local, privacy-aware desktop event read model."""
+
+    persist: bool = True
+    max_records: int = 500
+
+
+@dataclass
 class SystemConfig:
     path: PathConfig = field(default_factory=PathConfig)
     llm: LLMSettings = field(default_factory=LLMSettings)
     model: ModelConfig = field(default_factory=ModelConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
+    events: EventSettings = field(default_factory=EventSettings)
     debug: bool = True
     log_level: str = "INFO"
     ai_name: str = "Leon"
@@ -145,8 +179,14 @@ class SystemConfig:
 
 def _build_paths() -> PathConfig:
     root = _repo_root()
-    data_override = _env("LEON_DATA_DIR", "", "ZENTHON_DATA_DIR")
-    data_dir = Path(data_override) if data_override else root / "data"
+    desktop_settings = load_desktop_settings()
+    data_override = _env("LEON_DATA_DIR", "", "ZENTHON_DATA_DIR") or desktop_settings.get("data_dir", "")
+    if data_override:
+        data_dir = Path(str(data_override)).expanduser()
+    elif os.name == "nt":
+        data_dir = Path(os.getenv("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "Zenthon" / "data"
+    else:
+        data_dir = root / "data"
     leon_dir = data_dir / "leon"
     return PathConfig(
         base_dir=root,
@@ -166,6 +206,7 @@ def _build_paths() -> PathConfig:
 
 
 def _build_llm() -> LLMSettings:
+    desktop_settings = load_desktop_settings()
     provider = _env("LEON_LLM_PROVIDER", "ollama", "ZENTHON_LLM_PROVIDER", "LLM_PROVIDER").lower()
     ollama_host = _env("LEON_OLLAMA_HOST", "http://localhost:11434", "OLLAMA_HOST").rstrip("/")
     presets = {
@@ -202,7 +243,7 @@ def _build_llm() -> LLMSettings:
     if provider == "ollama" and not api_key:
         api_key = "ollama"
     base_url = _env("LEON_LLM_BASE_URL", preset["base_url"], "ZENTHON_LLM_BASE_URL")
-    model = _env("LEON_LLM_MODEL", preset["model"], "ZENTHON_LLM_MODEL")
+    model = _env("LEON_LLM_MODEL", str(desktop_settings.get("model") or preset["model"]), "ZENTHON_LLM_MODEL")
     embed_model = _env("LEON_EMBED_MODEL", "nomic-embed-text", "ZENTHON_EMBED_MODEL")
     return LLMSettings(
         provider=provider,
@@ -211,9 +252,24 @@ def _build_llm() -> LLMSettings:
         api_key=api_key,
         model=model,
         embed_model=embed_model,
-        timeout=float(_env("LEON_LLM_TIMEOUT", "120", "ZENTHON_LLM_TIMEOUT")),
-        temperature=float(_env("LEON_LLM_TEMPERATURE", "0.4", "ZENTHON_LLM_TEMPERATURE")),
-        max_tokens=int(_env("LEON_LLM_MAX_TOKENS", "1024", "ZENTHON_LLM_MAX_TOKENS")),
+        timeout=_bounded_float(
+            _env("LEON_LLM_TIMEOUT", "120", "ZENTHON_LLM_TIMEOUT"),
+            default=120.0,
+            minimum=1.0,
+            maximum=600.0,
+        ),
+        temperature=_bounded_float(
+            _env("LEON_LLM_TEMPERATURE", "0.4", "ZENTHON_LLM_TEMPERATURE"),
+            default=0.4,
+            minimum=0.0,
+            maximum=2.0,
+        ),
+        max_tokens=_bounded_int(
+            _env("LEON_LLM_MAX_TOKENS", "1024", "ZENTHON_LLM_MAX_TOKENS"),
+            default=1024,
+            minimum=1,
+            maximum=32768,
+        ),
     )
 
 
@@ -224,12 +280,53 @@ def load_config(config_file: Optional[str] = None) -> SystemConfig:
         llm=_build_llm(),
         model=ModelConfig(),
         training=TrainingConfig(),
-        debug=_env("LEON_DEBUG", "1", "ZENTHON_DEBUG") not in ("0", "false", "False"),
+        events=EventSettings(
+            persist=_as_bool(
+                _env(
+                    "LEON_EVENT_PERSIST",
+                    "1" if load_desktop_settings().get("event_persist", True) else "0",
+                    "ZENTHON_EVENT_PERSIST",
+                ),
+                True,
+            ),
+            max_records=_bounded_int(
+                _env("LEON_EVENT_HISTORY_MAX", "500", "ZENTHON_EVENT_HISTORY_MAX"),
+                default=500,
+                minimum=10,
+                maximum=5000,
+            ),
+        ),
+        debug=_as_bool(_env("LEON_DEBUG", "1", "ZENTHON_DEBUG"), True),
         log_level=_env("LEON_LOG_LEVEL", "INFO", "ZENTHON_LOG_LEVEL").upper(),
         ai_name=_env("LEON_AI_NAME", "Leon"),
     )
     cfg.ensure_dirs()
     return cfg
+
+
+def apply_desktop_profile(data_dir: Path | str, model: str, event_persist: bool) -> SystemConfig:
+    """Apply completed local first-run choices to the active process configuration."""
+    data_path = Path(data_dir).expanduser().resolve()
+    previous = config.path
+    config.path = PathConfig(
+        base_dir=previous.base_dir,
+        data_dir=data_path,
+        leon_dir=data_path / "leon",
+        facts_dir=data_path / "leon" / "facts",
+        graph_dir=data_path / "leon" / "graph",
+        memory_dir=data_path / "leon" / "memory",
+        learning_dir=data_path / "leon" / "learning",
+        traces_dir=data_path / "leon" / "traces",
+        checkpoints_dir=data_path / "leon" / "checkpoints",
+        logs_dir=previous.logs_dir,
+        models_dir=previous.models_dir,
+        datasets_dir=data_path / "datasets",
+        saved_models_dir=previous.saved_models_dir,
+    )
+    config.llm.model = model
+    config.events.persist = bool(event_persist)
+    config.ensure_dirs()
+    return config
 
 
 def save_config(cfg: SystemConfig, config_file: str) -> None:
@@ -242,6 +339,7 @@ def save_config(cfg: SystemConfig, config_file: str) -> None:
         "debug": cfg.debug,
         "paths": cfg.path.as_dict(),
         "llm": cfg.llm.as_dict(),
+        "events": {"persist": cfg.events.persist, "max_records": cfg.events.max_records},
     }
     Path(config_file).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
