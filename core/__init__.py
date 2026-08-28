@@ -6,6 +6,7 @@ from core.event_bus import event_bus
 from core.service_registry import service_registry
 from core.kernel import kernel
 from core.bootstrap import start_leon, leon_status, smoke_test, save_state, load_state
+from core.deprecation import warn_legacy, deprecated
 
 __all__ = [
     "config",
@@ -20,4 +21,6 @@ __all__ = [
     "smoke_test",
     "save_state",
     "load_state",
+    "warn_legacy",
+    "deprecated",
 ]
