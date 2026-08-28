@@ -5,12 +5,9 @@ Default bind is localhost only (security). Override for LAN:
 
     uvicorn interfaces.api.main:app --host 0.0.0.0 --port 8000
 
-or:
-
-    LEON_API_HOST=0.0.0.0 python -c "from interfaces.api.main import run; run()"
-
-Canonical API surface (Phase 3+): /api/v1/*
-Legacy routes at root remain for compatibility.
+Canonical API: /api/v1/*
+WebSocket: /ws (Phase 4 typed events)
+Legacy root routes remain for compatibility.
 """
 
 from __future__ import annotations
@@ -25,7 +22,7 @@ app = FastAPI(
     title="Leon AI Platform",
     description=(
         "Cognitive API v0.7 prototype. "
-        "Prefer /api/v1/* (Phase 3). Root routes are legacy-compatible."
+        "Prefer /api/v1/* . WebSocket /ws for typed events."
     ),
     version="0.7.0",
 )
@@ -34,6 +31,16 @@ app = FastAPI(
 from interfaces.api.v1.router import api_v1_router  # noqa: E402
 
 app.include_router(api_v1_router)
+
+# ── WebSocket /ws (Phase 4) ──────────────────────────────────────
+try:
+    from interfaces.websocket.server import register_websocket
+
+    register_websocket(app)
+except Exception as _ws_err:  # pragma: no cover
+    import logging
+
+    logging.getLogger("leon").warning("WebSocket not registered: %s", _ws_err)
 
 
 def _default_host() -> str:
@@ -113,7 +120,7 @@ class ImageGenerateRequest(BaseModel):
 class SpeechRequest(BaseModel):
     path: Optional[str] = None
     text: Optional[str] = None
-    mode: str = "stt"  # stt | tts | status
+    mode: str = "stt"
 
 
 @app.get("/")
@@ -123,6 +130,7 @@ def root() -> Dict[str, Any]:
         "version": "0.7.0",
         "bind_policy": "default 127.0.0.1 — set LEON_API_HOST to expose",
         "api_v1": "/api/v1",
+        "websocket": "/ws",
         "legacy_endpoints": [
             "/health",
             "/status",
