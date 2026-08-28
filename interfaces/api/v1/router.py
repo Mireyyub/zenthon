@@ -1,8 +1,8 @@
 """
-Leon /api/v1 gateway (Phase 3).
+Leon /api/v1 gateway (Phase 3–5).
 
 All handlers call the same cognitive path as legacy routes.
-No behavior change to ReasoningEngine / security gate.
+Tasks: durable SQLite when available.
 """
 
 from __future__ import annotations
@@ -33,9 +33,6 @@ from interfaces.api.v1.tasks_store import task_store
 api_v1_router = APIRouter(prefix="/api/v1", tags=["v1"])
 
 
-# ── health / system ──────────────────────────────────────────────
-
-
 @api_v1_router.get("/health")
 def v1_health() -> Dict[str, Any]:
     from interfaces.api.health import health_report
@@ -63,9 +60,6 @@ def v1_native_core() -> Dict[str, Any]:
     from native_core import health_report
 
     return health_report()
-
-
-# ── chat / think / reason / cycle ────────────────────────────────
 
 
 def _think_payload(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -156,9 +150,6 @@ def v1_cycle(body: CycleBody) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── agents ───────────────────────────────────────────────────────
-
-
 @api_v1_router.get("/agents")
 def v1_list_agents() -> Dict[str, Any]:
     try:
@@ -167,7 +158,6 @@ def v1_list_agents() -> Dict[str, Any]:
         names = list(getattr(agent_manager, "list_agents", lambda: [])() or [])
         if not names and hasattr(agent_manager, "_agents"):
             names = list(getattr(agent_manager, "_agents", {}).keys())
-        # honest production set
         production = ["react", "coding"]
         return {
             "agents": names or production,
@@ -223,13 +213,10 @@ def v1_crew(body: CrewBody) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── tasks (in-memory prototype store) ────────────────────────────
-
-
 @api_v1_router.get("/tasks")
 def v1_list_tasks(limit: int = Query(50, ge=1, le=200)) -> Dict[str, Any]:
     items = [t.to_dict() for t in task_store.list(limit=limit)]
-    return {"tasks": items, "count": len(items), "durable": False}
+    return {"tasks": items, "count": len(items), "durable": task_store.durable}
 
 
 @api_v1_router.post("/tasks")
@@ -242,7 +229,7 @@ def v1_create_task(body: TaskCreateBody) -> Dict[str, Any]:
         priority=body.priority,
         agent_name=body.agent_name,
     )
-    return {"task": task.to_dict(), "durable": False}
+    return {"task": task.to_dict(), "durable": task_store.durable}
 
 
 @api_v1_router.get("/tasks/{task_id}")
@@ -250,10 +237,27 @@ def v1_get_task(task_id: str) -> Dict[str, Any]:
     task = task_store.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
-    return {"task": task.to_dict(), "durable": False}
+    return {"task": task.to_dict(), "durable": task_store.durable}
 
 
-# ── memory / knowledge ───────────────────────────────────────────
+@api_v1_router.get("/storage/status")
+def v1_storage_status() -> Dict[str, Any]:
+    try:
+        from core.storage import migration_status
+
+        return migration_status()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@api_v1_router.post("/storage/migrate")
+def v1_storage_migrate() -> Dict[str, Any]:
+    try:
+        from core.storage import migrate_json_to_sqlite
+
+        return migrate_json_to_sqlite()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @api_v1_router.post("/memory/retrieve")
@@ -277,7 +281,6 @@ def v1_facts(limit: int = Query(20, ge=1, le=200)) -> Dict[str, Any]:
         fs = get_fact_store()
         all_facts = fs.all() if hasattr(fs, "all") else []
         items = list(all_facts)[:limit]
-        # normalize
         out = []
         for f in items:
             if isinstance(f, dict):
@@ -301,9 +304,6 @@ def v1_graph_stats() -> Dict[str, Any]:
         return {"graph": stats, "ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# ── curriculum ───────────────────────────────────────────────────
 
 
 @api_v1_router.get("/volumes")
@@ -343,9 +343,6 @@ def v1_teach(body: TeachBody) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── self ─────────────────────────────────────────────────────────
-
-
 @api_v1_router.post("/self/improve")
 def v1_self_improve(body: SelfImproveBody) -> Dict[str, Any]:
     try:
@@ -358,7 +355,6 @@ def v1_self_improve(body: SelfImproveBody) -> Dict[str, Any]:
 
 @api_v1_router.get("/self/view")
 def v1_self_view() -> Dict[str, Any]:
-    """High-level body map only — no full source dump."""
     try:
         from brain.self_view import SelfView
 
@@ -372,9 +368,6 @@ def v1_self_view() -> Dict[str, Any]:
         return {"view": {"status": "available", "hint": "use CLI: self body"}}
     except Exception as e:
         return {"view": None, "error": str(e)}
-
-
-# ── models / tools / media ───────────────────────────────────────
 
 
 @api_v1_router.get("/models")
@@ -413,7 +406,6 @@ def v1_list_tools() -> Dict[str, Any]:
 
 @api_v1_router.post("/tools/call")
 def v1_tool_call(body: ToolCallBody) -> Dict[str, Any]:
-    """Always through security gate."""
     try:
         from security import safe_tool_call
 
@@ -480,32 +472,18 @@ def v1_index() -> Dict[str, Any]:
         "endpoints": [
             "GET  /health",
             "GET  /status",
-            "GET  /system/status",
             "POST /chat",
             "POST /think",
             "POST /reason",
-            "POST /cycle",
-            "GET  /agents",
-            "POST /agents/run",
-            "POST /agents/orchestrate",
-            "POST /agents/crew",
-            "GET  /tasks",
-            "POST /tasks",
-            "GET  /tasks/{id}",
+            "GET|POST /tasks",
+            "GET  /storage/status",
+            "POST /storage/migrate",
             "POST /memory/retrieve",
             "GET  /knowledge/facts",
-            "GET  /knowledge/graph",
-            "GET  /volumes",
-            "POST /teach",
-            "POST /self/improve",
-            "GET  /self/view",
             "GET  /models",
             "GET  /tools",
-            "POST /tools/call",
-            "POST /media/understand",
-            "POST /media/generate",
-            "POST /audio",
+            "WS   /ws",
         ],
         "bind_policy": "default 127.0.0.1",
-        "note": "Legacy routes without /api/v1 prefix remain for compatibility",
+        "storage": "SQLite data/leon/leon.db (JSON dual-read preserved)",
     }
