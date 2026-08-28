@@ -4,64 +4,63 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "zenthon"
-version = "1.0.0"
-description = "Suni İntellekt Platforması - Tamamilə Modullu Python Platforması"
+version = "0.7.0"
+description = "Leon AI Platform — offline-first cognitive prototype (memory, curriculum, reasoning, agents, self-improve)"
 authors = ["Mireyyub <mireyyub@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/Mireyyub/zenthon"
 documentation = "https://github.com/Mireyyub/zenthon/wiki"
-keywords = ["ai", "machine-learning", "deep-learning", "pytorch", "scikit-learn"]
+keywords = ["ai", "cognitive", "agent", "llm", "ollama", "reasoning", "curriculum"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
 [tool.poetry.dependencies]
-python = "^3.8"
-numpy = "^1.21.0"
-pandas = "^1.3.0"
-scikit-learn = "^1.0.0"
-torch = "^1.9.0"
-torchvision = "^0.10.0"
-Pillow = "^8.0.0"
-opencv-python = "^4.5.0"
-fastapi = "^0.70.0"
-uvicorn = "^0.15.0"
-flask = "^2.0.0"
-matplotlib = "^3.4.0"
-seaborn = "^0.11.0"
-scipy = "^1.7.0"
-psutil = "^5.8.0"
-GPUtil = "^1.4.0"
+python = "^3.10"
+fastapi = ">=0.100.0"
+uvicorn = ">=0.22.0"
+pydantic = ">=2.0.0"
+httpx = ">=0.24.0"
+numpy = ">=1.24.0"
+pandas = ">=2.0.0"
+Pillow = ">=9.0.0"
+psutil = ">=5.8.0"
 
 [tool.poetry.group.dev.dependencies]
-black = "^22.0"
-flake8 = "^4.0"
-pylint = "^2.12"
-isort = "^5.10"
-pytest = "^7.0"
-pytest-cov = "^3.0"
-mkdocs = "^1.3"
-mkdocs-material = "^8.5"
+pytest = ">=7.0"
+pytest-cov = ">=4.0"
+black = ">=22.0"
+isort = ">=5.10"
+
+[tool.poetry.group.optional.dependencies]
+# Classic ML demos (LEGACY) — not required for cognitive core
+scikit-learn = ">=1.4.0"
+torch = ">=2.2.0"
+torchvision = ">=0.17.0"
+matplotlib = ">=3.8.0"
+seaborn = ">=0.13.0"
+scipy = ">=1.11.0"
+flask = ">=3.0.0"
+opencv-python = ">=4.9.0"
 
 [tool.poetry.scripts]
 zenthon-cli = "interfaces.cli.main_cli:main"
 zenthon-gui = "interfaces.gui.main_gui:run_gui"
-zenthon-web = "interfaces.web.web_interface:run_web_interface"
 zenthon-api = "interfaces.api.main:run"
 
 [tool.black]
 line-length = 88
-target-version = ["py38", "py39", "py310"]
+target-version = ["py310", "py311", "py312"]
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -90,7 +89,7 @@ ensure_newline_before_comments = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-addopts = "-v --cov=core --cov=data --cov=models --cov=training --cov=inference --cov=interfaces --cov=utils"
+addopts = "-v --cov=core --cov=brain --cov=agents --cov=knowledge --cov=memory --cov=security --cov=interfaces"
 
 [tool.flake8]
 max-line-length = 88
