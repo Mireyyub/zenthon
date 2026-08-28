@@ -1,66 +1,75 @@
 # Leon Architecture (canonical)
 
-Identity: **Leon** · Repo: Mireyyub/zenthon · Status: v0.7 cognitive prototype
+**Identity:** Leon · **Repo:** Mireyyub/zenthon · **Status:** v0.8.0 Alpha cognitive prototype (+ hybrid desktop path)
+
+See also: [`ARCHITECTURE_AUDIT.md`](ARCHITECTURE_AUDIT.md) · [`docs/GAP_ANALYSIS.md`](docs/GAP_ANALYSIS.md) · [`docs/PUBLIC_SURFACE.md`](docs/PUBLIC_SURFACE.md)
 
 ## Single cognitive path
 
 ```
-CLI / GUI / FastAPI (interfaces.*)
+CLI / GUI / FastAPI / React ui
         ↓
 BrainOrchestrator.run()
         ↓
 ReasoningEngine.reason()     ← only public think path
         ↓
-Curriculum → Facts → Graph → Memory → (optional) LLM backend
+Curriculum → Facts → Graph → Memory → LLMProvider (optional)
         ↓
 Agents (react, coding) | Planner | Security gate
         ↓
-data/leon/{facts,graph,learning,memory,traces,plans,audit,sandbox,mutations,self_improve,self_view,system}
+data/leon/{facts,graph,learning,memory,traces,plans,audit,sandbox,mutations,...}
 ```
 
-## Self layers (introspection + evolution)
+## Hybrid layers (honest)
+
+| Layer | Reality |
+|-------|--------|
+| Python cognitive core | Primary, mature |
+| FastAPI `/api/v1` | Local gateway; default **127.0.0.1** |
+| React `ui/` | Minimal chat/status client — no AI in browser |
+| Process supervisor | Python `core/supervisor.py` |
+| Tauri / Rust | Seed only — no AI in Rust |
+| Packaging | PyInstaller/NSIS scripts — not store-grade |
+
+## Self layers
 
 ```
-SelfView          → see organs/cells, lines, AST, search
-SelfImproveEngine → diagnose → teach/learn → verify (multi-round)
-SelfMutateEngine  → allowlisted source/curriculum mutation + backup/rollback
-CodeAuthor        → write new helpers under CREATE_PREFIXES
-code_verify       → green-gate (compile/import/call/smoke)
-SystemLoop        → whole-system status + improve orchestration
-mutate_allowlist  → shared write policy (security/core/kernel forbidden)
+SelfView          → organs/cells, AST, search (restricted FS)
+SelfImproveEngine → diagnose → teach/learn → verify
+SelfMutateEngine  → allowlist + LEON_ALLOW_MUTATE + backup/rollback
+SystemLoop        → status + improve orchestration
 ```
 
-## Public API surface
+## Public API surface (Python)
 
 | Use | Module |
 |-----|--------|
-| Think / reason | `brain.reasoning.engine.ReasoningEngine` or `BrainOrchestrator.run` |
+| Think / reason | `BrainOrchestrator` / `ReasoningEngine` |
+| LLM | `brain.llm.get_llm_provider` |
 | Teach | `curriculum.CurriculumEngine` |
-| Memory | `memory.MemoryManager` / `memory.retrieve` |
-| Facts / Graph | `knowledge.registry.get_fact_store` / `get_graph` |
-| Agents | `agents.manager.agent_manager` (prod: react, coding) |
+| Memory | `memory.retrieve` / `MemoryManager` |
+| Facts / Graph | `knowledge.registry` |
+| Agents | `agents.manager.agent_manager` |
 | Security | `security.gate.safe_tool_call` |
 | Start | `core.bootstrap.start_leon` |
-| Body map | `brain.self_view.SelfView` |
-| Improve | `brain.self_improve.improve_auto` |
-| System | `brain.system_loop.SystemLoop` |
-
-## Not public (internal / legacy)
-
-| Path | Role |
-|------|------|
-| `brain.core_brain.ThinkingBrain` | LLM reasoning backend only |
-| `brain.core.Brain` | Thin legacy stub |
-| `models/`, `training/`, `inference/predictors` | LEGACY ML demos — see LEGACY.md |
-| `interfaces/web` | Legacy Flask UI |
-| `inference/api/fastapi_app` | Deprecated re-export of `interfaces.api.main` |
+| Desktop readiness | `native_core.desktop_status` |
+| Supervisor | `core.supervisor` |
 
 ## Design rules
 
-1. One reasoning path — no parallel ad-hoc answerers for user queries
-2. Evidence before free LLM
-3. Conflict → UNKNOWN
-4. Promote only validated learning records
-5. Tools behind allowlist + path sandbox
-6. Source mutation: allowlist + `LEON_ALLOW_MUTATE` + green-gate + backup
-7. Claims in README = code behavior
+1. One reasoning path — no parallel ad-hoc answerers for user queries  
+2. Evidence before free LLM; conflict → UNKNOWN  
+3. Promote only validated learning records  
+4. Tools behind allowlist + path sandbox  
+5. Source mutation gated; security/bootstrap not mutable  
+6. Default network bind **127.0.0.1**  
+7. Claims in README = code behavior  
+8. No AI logic in React or Rust  
+
+## Not public
+
+| Path | Role |
+|------|------|
+| `brain.core_brain.ThinkingBrain` | Internal LLM backend |
+| `models/`, `training/`, classic inference | LEGACY — see LEGACY.md |
+| `interfaces/web` | Legacy Flask |
