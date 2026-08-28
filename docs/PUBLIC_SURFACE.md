@@ -1,4 +1,4 @@
-# Leon / Zenthon — Public Python Surface (Phase 2)
+# Leon / Zenthon — Public Python Surface (Phase 2–3)
 
 **Version:** 0.7.0 (cognitive prototype)  
 **Rule:** Prefer these imports. Everything else is internal, experimental, or legacy.
@@ -42,81 +42,50 @@ Do **not** call `ThinkingBrain` or ad-hoc LLM answerers for user queries.
 
 ---
 
-## Internal (do not import from app code)
+## HTTP API (Phase 3)
 
-| Path | Role |
-|------|------|
-| `brain.core_brain.ThinkingBrain` | LLM backend only inside ReasoningEngine |
-| `brain.core.Brain` | Thin compat stub |
-| `brain.policy_bind` | Startup policy wiring |
-| `brain.memory.*` | Prefer top-level `memory/` |
-| Package-private helpers | `_`-prefixed modules/functions |
-
----
-
-## Experimental
-
-| Path | Flag |
-|------|------|
-| `agents.crew`, `agents.swarm` | Experimental multi-agent |
-| `agents.vision_agent`, `agents.voice_agent` | Partial multimodal |
-| `agents.local_agi.*` | Integrated; wiring into main cycle ongoing |
-
-See `agents/EXPERIMENTAL.md`.
-
----
-
-## Legacy (deprecated — still importable)
-
-| Path | Use instead |
-|------|-------------|
-| `models/`, `training/`, `inference/predictors`, `inference/explainers` | Not part of cognitive core |
-| `interfaces.web` | GUI / FastAPI |
-| `inference.api.fastapi_app` | `interfaces.api.main` |
-| Flask web entry | React UI (future) / current GUI |
-
-Warnings: `core.deprecation.warn_legacy` / `@deprecated`.
-
----
-
-## FastAPI route inventory (current, pre-/api/v1)
+**Prefer:** `/api/v1/*`  
+**Legacy:** root paths still work (compatibility).
 
 | Method | Path | Purpose |
 |--------|------|--------|
-| GET | `/` | Index + endpoint list |
-| GET | `/health` | Health report |
-| GET | `/status` | `leon_status()` |
-| GET | `/native-core/status` | Native accelerator status |
-| POST | `/think` | BrainOrchestrator.run |
-| POST | `/reason` | ReasoningEngine.reason |
-| POST | `/cycle` | CognitiveCycle (PODALR) |
-| POST | `/crew` | Experimental crew |
-| POST | `/orchestrate` | UnifiedAgentOrchestrator |
-| POST | `/self-improve/sync` | Self-learning sync |
-| POST | `/teach` | Curriculum teach |
-| GET | `/volumes` | List curriculum volumes |
-| POST | `/media/understand` | Image understand |
-| POST | `/media/generate` | Procedural image gen |
-| POST | `/audio` | STT/TTS/status |
+| GET | `/api/v1/` | v1 index |
+| GET | `/api/v1/health` | Health report |
+| GET | `/api/v1/status` | `leon_status()` |
+| POST | `/api/v1/chat` | UI chat → Orchestrator |
+| POST | `/api/v1/think` | Orchestrator.run |
+| POST | `/api/v1/reason` | ReasoningEngine.reason |
+| POST | `/api/v1/cycle` | CognitiveCycle |
+| GET | `/api/v1/agents` | List agents |
+| POST | `/api/v1/agents/run` | Single agent |
+| POST | `/api/v1/agents/orchestrate` | Multi agent |
+| GET/POST | `/api/v1/tasks` | In-memory tasks (not durable yet) |
+| POST | `/api/v1/memory/retrieve` | Unified retrieve |
+| GET | `/api/v1/knowledge/facts` | Fact sample |
+| GET | `/api/v1/knowledge/graph` | Graph stats |
+| GET | `/api/v1/volumes` | Curriculum volumes |
+| POST | `/api/v1/teach` | Teach lesson/volume |
+| POST | `/api/v1/self/improve` | Self-learning sync |
+| GET | `/api/v1/self/view` | High-level body map |
+| GET | `/api/v1/models` | LLM provider health |
+| GET | `/api/v1/tools` | Tool names (gated) |
+| POST | `/api/v1/tools/call` | `safe_tool_call` only |
+| POST | `/api/v1/media/*` | Multimodal |
 
-**Target (Phase 3):** group under `/api/v1/*` without breaking these until a deprecation window.
+OpenAPI: `http://127.0.0.1:8000/docs`
 
-**Default bind:** `127.0.0.1:8000` (LAN requires explicit host override).
-
----
-
-## Network / offline policy
-
-- Default API host: **127.0.0.1**
-- Ollama expected local (`LEON_OLLAMA_HOST`)
-- LLM failures must surface as `error` / unreachable — never silent success
-- `MockProvider` for offline tests
-
-Env: `LEON_API_HOST`, `LEON_API_PORT`, `LEON_DATA_DIR`, `LEON_LLM_*`, `LEON_ALLOW_MUTATE`
+**Default bind:** `127.0.0.1:8000`  
+Env: `LEON_API_HOST`, `LEON_API_PORT`
 
 ---
 
-## Import smoke (integrators)
+## Internal / experimental / legacy
+
+See `LEGACY.md` and `agents/EXPERIMENTAL.md`.
+
+---
+
+## Import smoke
 
 ```python
 from core import start_leon, config, logger
@@ -132,4 +101,4 @@ from brain.llm import get_llm_provider
 
 ---
 
-*Phase 2 — isolation only. No cognitive behavior change.*
+*Phase 2 isolation + Phase 3 /api/v1. No cognitive behavior change.*

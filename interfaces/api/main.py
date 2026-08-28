@@ -8,6 +8,9 @@ Default bind is localhost only (security). Override for LAN:
 or:
 
     LEON_API_HOST=0.0.0.0 python -c "from interfaces.api.main import run; run()"
+
+Canonical API surface (Phase 3+): /api/v1/*
+Legacy routes at root remain for compatibility.
 """
 
 from __future__ import annotations
@@ -20,9 +23,17 @@ from pydantic import BaseModel, Field
 
 app = FastAPI(
     title="Leon AI Platform",
-    description="Cognitive API: think / cycle / crew / teach / media (v0.7 prototype)",
+    description=(
+        "Cognitive API v0.7 prototype. "
+        "Prefer /api/v1/* (Phase 3). Root routes are legacy-compatible."
+    ),
     version="0.7.0",
 )
+
+# ── mount v1 gateway ─────────────────────────────────────────────
+from interfaces.api.v1.router import api_v1_router  # noqa: E402
+
+app.include_router(api_v1_router)
 
 
 def _default_host() -> str:
@@ -111,7 +122,8 @@ def root() -> Dict[str, Any]:
         "name": "Leon",
         "version": "0.7.0",
         "bind_policy": "default 127.0.0.1 — set LEON_API_HOST to expose",
-        "endpoints": [
+        "api_v1": "/api/v1",
+        "legacy_endpoints": [
             "/health",
             "/status",
             "/native-core/status",
@@ -127,7 +139,8 @@ def root() -> Dict[str, Any]:
             "/media/generate",
             "/audio",
         ],
-        "docs": "See docs/PUBLIC_SURFACE.md for public Python surface",
+        "docs": "/docs",
+        "public_surface": "docs/PUBLIC_SURFACE.md",
     }
 
 
@@ -150,7 +163,6 @@ def status() -> Dict[str, Any]:
 
 @app.get("/native-core/status")
 def native_core_status() -> Dict[str, Any]:
-    """Expose the active acceleration source without claiming a missing binary is healthy."""
     from native_core import health_report
 
     return health_report()
@@ -217,7 +229,6 @@ def crew_endpoint(req: CrewRequest) -> Dict[str, Any]:
 
 @app.post("/orchestrate")
 def orchestrate_endpoint(req: OrchestrateRequest) -> Dict[str, Any]:
-    """Run approved production agents with explicit shared context."""
     try:
         from agents.unified_orchestrator import unified_orchestrator
 
