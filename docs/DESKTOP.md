@@ -1,7 +1,7 @@
-# Leon / Zenthon — Desktop path (Phase 8)
+# Leon / Zenthon — Desktop path (Phase 8–9)
 
 **Honest status:** hybrid *cognitive* core is ready to attach a thin shell.  
-**Not yet:** single-click `Zenthon.exe` with Tauri + React.
+**Not yet:** single-click `Zenthon.exe` with Tauri + React packaging.
 
 ---
 
@@ -13,7 +13,8 @@
 | API | FastAPI `/api/v1/*` on **127.0.0.1** |
 | LLM | `LLMProvider` (Ollama / Mock) |
 | Storage | JSON primary + SQLite tasks |
-| GUI | Tkinter (`interfaces/gui`) — legacy |
+| GUI legacy | Tkinter (`interfaces/gui`) |
+| GUI Phase 9 | React+Vite client in `ui/` → `/api/v1` only |
 | Native | `native_core` optional binary; Python fallback always |
 | Security | Gate + PathSandbox + allowlist |
 
@@ -23,11 +24,13 @@ Probe:
 curl -s http://127.0.0.1:8000/api/v1/system/desktop | python -m json.tool
 ```
 
-or:
+React UI:
 
-```python
-from native_core import desktop_status
-print(desktop_status())
+```bash
+# terminal 1
+uvicorn interfaces.api.main:app --host 127.0.0.1 --port 8000
+# terminal 2
+cd ui && npm install && npm run dev
 ```
 
 `ready_for_production_desktop` is always **false** until Tauri shell ships.  
@@ -35,14 +38,14 @@ print(desktop_status())
 
 ---
 
-## Target (not implemented in Phase 8)
+## Target (not implemented yet)
 
 ```
 Tauri (Rust) window + tray
   → process supervisor (Python API, Ollama)
   → localhost FastAPI
   → same cognitive path
-React/TS UI (no AI logic in browser)
+  → embed or load ui/ build
 ```
 
 Rules from ARCHITECTURE_AUDIT:
@@ -54,23 +57,14 @@ Rules from ARCHITECTURE_AUDIT:
 
 ---
 
-## Native core
-
-- Ops: `normalize_text`, `fingerprint`, `token_metrics` only
-- Env: `ZENTHON_NATIVE_CORE_BIN`
-- Without binary → deterministic Python fallback
-
----
-
-## Next phases (suggested)
+## Next phases
 
 | Phase | Focus |
 |-------|--------|
-| 9 | React + Vite client against `/api/v1` (no shell yet) |
 | 10 | Tauri shell + supervisor seed |
 | 11 | Windows packaging (Setup.exe) |
 | 12 | E2E install → chat → shutdown |
 
 ---
 
-*Phase 8 = readiness contract + RAG persist. No fake product claims.*
+*Phase 8 = readiness + RAG persist. Phase 9 = React API client. No fake product claims.*

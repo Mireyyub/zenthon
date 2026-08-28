@@ -8,6 +8,7 @@ Default bind is localhost only (security). Override for LAN:
 Canonical API: /api/v1/*
 WebSocket: /ws (Phase 4 typed events)
 Legacy root routes remain for compatibility.
+CORS: localhost Vite UI (Phase 9).
 """
 
 from __future__ import annotations
@@ -16,15 +17,34 @@ import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 app = FastAPI(
     title="Leon AI Platform",
     description=(
-        "Cognitive API v0.7 prototype. "
-        "Prefer /api/v1/* . WebSocket /ws for typed events."
+        "Cognitive API v0.8 prototype. "
+        "Prefer /api/v1/* . WebSocket /ws for typed events. "
+        "React UI under ui/ (Phase 9) — no AI in browser."
     ),
-    version="0.7.0",
+    version="0.8.0",
+)
+
+# CORS for local Vite React client (Phase 9)
+_cors_origins = [
+    o.strip()
+    for o in os.getenv(
+        "LEON_CORS_ORIGINS",
+        "http://127.0.0.1:5173,http://localhost:5173",
+    ).split(",")
+    if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ── mount v1 gateway ─────────────────────────────────────────────
@@ -127,10 +147,11 @@ class SpeechRequest(BaseModel):
 def root() -> Dict[str, Any]:
     return {
         "name": "Leon",
-        "version": "0.7.0",
+        "version": "0.8.0",
         "bind_policy": "default 127.0.0.1 — set LEON_API_HOST to expose",
         "api_v1": "/api/v1",
         "websocket": "/ws",
+        "ui": "ui/ (Vite React Phase 9)",
         "legacy_endpoints": [
             "/health",
             "/status",
