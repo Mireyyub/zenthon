@@ -12,8 +12,9 @@ These packages are **not** the Leon cognitive core.
 | `inference/api/fastapi_app.py` | Re-exports cognitive app | Deprecated entry |
 | `brain.core.Brain` | Thin stub | Keep for import compat |
 | `brain.core_brain.ThinkingBrain` | LLM backend only | Internal to ReasoningEngine |
+| `interfaces/gui` (Tkinter) | Functional desktop UI today | Legacy vs target React UI |
 
-**Canonical path:** see `ARCHITECTURE.md`
+**Canonical path:** see `ARCHITECTURE.md` and `docs/PUBLIC_SURFACE.md`
 
 ```
 interfaces → BrainOrchestrator → ReasoningEngine
@@ -22,3 +23,7 @@ interfaces → BrainOrchestrator → ReasoningEngine
 ```
 
 Do not import `models.*` or `training.*` from cognitive modules.
+
+Deprecation helper: `from core.deprecation import warn_legacy, deprecated`
+
+**Network:** FastAPI default bind is `127.0.0.1` (not `0.0.0.0`).

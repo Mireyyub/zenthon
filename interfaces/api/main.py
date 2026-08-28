@@ -1,11 +1,18 @@
 """
 Leon FastAPI – cognitive + multimodal + crew endpoints.
 
+Default bind is localhost only (security). Override for LAN:
+
     uvicorn interfaces.api.main:app --host 0.0.0.0 --port 8000
+
+or:
+
+    LEON_API_HOST=0.0.0.0 python -c "from interfaces.api.main import run; run()"
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -13,9 +20,21 @@ from pydantic import BaseModel, Field
 
 app = FastAPI(
     title="Leon AI Platform",
-    description="Cognitive API: think / cycle / crew / teach / media",
-    version="0.8.0",
+    description="Cognitive API: think / cycle / crew / teach / media (v0.7 prototype)",
+    version="0.7.0",
 )
+
+
+def _default_host() -> str:
+    return os.getenv("LEON_API_HOST", os.getenv("ZENTHON_API_HOST", "127.0.0.1")).strip() or "127.0.0.1"
+
+
+def _default_port() -> int:
+    raw = os.getenv("LEON_API_PORT", os.getenv("ZENTHON_API_PORT", "8000")).strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return 8000
 
 
 class ThinkRequest(BaseModel):
@@ -83,13 +102,15 @@ class ImageGenerateRequest(BaseModel):
 class SpeechRequest(BaseModel):
     path: Optional[str] = None
     text: Optional[str] = None
-    mode: str = "stt"  # stt | tts
+    mode: str = "stt"  # stt | tts | status
 
 
 @app.get("/")
 def root() -> Dict[str, Any]:
     return {
         "name": "Leon",
+        "version": "0.7.0",
+        "bind_policy": "default 127.0.0.1 — set LEON_API_HOST to expose",
         "endpoints": [
             "/health",
             "/status",
@@ -106,6 +127,7 @@ def root() -> Dict[str, Any]:
             "/media/generate",
             "/audio",
         ],
+        "docs": "See docs/PUBLIC_SURFACE.md for public Python surface",
     }
 
 
@@ -283,7 +305,9 @@ def media_generate(req: ImageGenerateRequest) -> Dict[str, Any]:
     try:
         from multimodal.generate import generate_image
 
-        return generate_image(req.prompt, width=req.width, height=req.height, style=req.style, seed=req.seed)
+        return generate_image(
+            req.prompt, width=req.width, height=req.height, style=req.style, seed=req.seed
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -308,10 +332,13 @@ def audio_endpoint(req: SpeechRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def run(host: str = "0.0.0.0", port: int = 8000) -> None:
+def run(host: Optional[str] = None, port: Optional[int] = None) -> None:
+    """Start uvicorn. Defaults: 127.0.0.1:8000 (not 0.0.0.0)."""
     import uvicorn
 
-    uvicorn.run("interfaces.api.main:app", host=host, port=port, reload=False)
+    h = host if host is not None else _default_host()
+    p = port if port is not None else _default_port()
+    uvicorn.run("interfaces.api.main:app", host=h, port=p, reload=False)
 
 
 if __name__ == "__main__":
