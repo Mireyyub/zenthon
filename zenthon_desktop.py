@@ -1,8 +1,9 @@
-"""Windows/PyInstaller entry point for the Zenthon desktop application."""
+"""Windows/PyInstaller entry — delegates to leon_desktop (Phase 11)."""
+
 from __future__ import annotations
 
-from interfaces.gui.main_gui import run_gui
+from leon_desktop import run_desktop
 
 
 if __name__ == "__main__":
-    run_gui()
+    run_desktop()
