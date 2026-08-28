@@ -1,5 +1,5 @@
 """
-Agent Swarm — from Drive zenthon_v10, adapted for Leon (sync LLM fallback).
+Agent Swarm — from Drive zenthon_v10, adapted for Leon (sync LLMProvider fallback).
 """
 
 from __future__ import annotations
@@ -17,16 +17,15 @@ def _llm_complete(
     prompt: str, system: str = "", temperature: float = 0.3, max_tokens: int = 1024
 ) -> str:
     try:
-        from brain.llm.client import get_llm_client
+        from brain.llm.provider import get_llm_provider
 
-        c = get_llm_client()
-        if getattr(c, "is_available", True):
-            return (
-                c.complete(
-                    prompt, system=system, temperature=temperature, max_tokens=max_tokens
-                )
-                or ""
+        p = get_llm_provider()
+        if p.is_available:
+            comp = p.complete(
+                prompt, system=system or None, temperature=temperature, max_tokens=max_tokens
             )
+            if comp.ok:
+                return comp.text
     except Exception as e:
         logger.debug(f"LLM complete failed: {e}")
     return f"[offline] {prompt[:200]}"

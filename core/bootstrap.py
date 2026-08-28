@@ -147,16 +147,15 @@ def _register_soft_services() -> Dict[str, str]:
 
 def _check_llm() -> Dict[str, Any]:
     try:
-        from brain.llm.client import get_llm_client
+        from brain.llm.provider import get_llm_provider
 
-        client = get_llm_client(force_new=True)
-        return client.health_check()
+        return get_llm_provider(force_new=True).health().to_dict()
     except Exception as e:
         return {
-            "provider": config.llm.provider,
+            "provider": getattr(config.llm, "provider", "unknown"),
             "reachable": False,
             "error": str(e),
-            "model": config.llm.model,
+            "model": getattr(config.llm, "model", ""),
         }
 
 

@@ -1,4 +1,4 @@
-"""Health probe – Ollama + data dir + graph (Faza 7)."""
+"""Health probe – LLMProvider + data dir + graph."""
 
 from __future__ import annotations
 
@@ -27,12 +27,12 @@ def health_report() -> Dict[str, Any]:
         report["ok"] = False
         report["components"]["paths"] = {"ok": False, "error": str(e)}
 
-    # llm / ollama
+    # llm via provider abstraction
     try:
-        from brain.llm.client import get_llm_client
+        from brain.llm.provider import get_llm_provider
 
-        client = get_llm_client(force_new=True)
-        llm = client.health_check()
+        health = get_llm_provider(force_new=True).health()
+        llm = health.to_dict()
         report["components"]["llm"] = llm
         # LLM offline is soft – system still ok
         report["components"]["llm"]["soft"] = not bool(llm.get("reachable"))

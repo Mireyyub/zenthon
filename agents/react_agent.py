@@ -1,4 +1,4 @@
-"""ReAct Agent – improved action parse + security gate."""
+"""ReAct Agent – improved action parse + security gate + LLMProvider."""
 
 from __future__ import annotations
 
@@ -23,14 +23,14 @@ class ReActAgent(BaseAgent):
 
         try:
             from tools.registry import tool_registry
-            from brain.llm.client import get_llm_client
+            from brain.llm.provider import get_llm_provider
         except Exception as e:
             return AgentResult(success=False, error=f"Deps missing: {e}")
 
         tools = tool_registry.list_tools(production_only=True)
         tool_desc = "\n".join(f"- {t['name']}: {t['description']}" for t in tools) or "(no tools)"
 
-        client = get_llm_client()
+        provider = get_llm_provider()
         scratch: List[str] = []
         observations: List[str] = []
 
@@ -64,9 +64,13 @@ class ReActAgent(BaseAgent):
             prompt_parts.append(f"Addım {step}. Thought/Action və ya Final yaz.")
             prompt = "\n\n".join(prompt_parts)
 
-            if client.is_available:
-                raw = client.complete(prompt, system=system, temperature=0.2, max_tokens=400) or ""
-            else:
+            raw = ""
+            if provider.is_available:
+                comp = provider.complete(
+                    prompt, system=system, temperature=0.2, max_tokens=400
+                )
+                raw = comp.text if comp.ok else ""
+            if not raw:
                 if re.search(r"[\d\+\-\*/]+", task) and any(c in task for c in "+-*/"):
                     expr = re.sub(r"[^0-9\+\-\*/\.\(\) ]", "", task)
                     try:

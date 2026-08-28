@@ -92,7 +92,7 @@ class SystemKernel:
         service_registry.register_factory("brain", _brain_factory)
         service_registry.register_factory(
             "llm",
-            lambda: __import__("brain.llm", fromlist=["get_llm_client"]).get_llm_client(),
+            lambda: __import__("brain.llm", fromlist=["get_llm_provider"]).get_llm_provider(),
         )
 
     def _check_environment(self) -> None:

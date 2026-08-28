@@ -1,4 +1,4 @@
-"""Vector Memory – hybrid BOW + dense, disk persist."""
+"""Vector Memory – hybrid BOW + dense (LLMProvider.embed), disk persist."""
 
 from __future__ import annotations
 
@@ -71,10 +71,9 @@ class VectorMemory:
         if self._llm_ok is False:
             return None
         try:
-            from brain.llm.client import get_llm_client
+            from brain.llm.provider import get_llm_provider
 
-            client = get_llm_client()
-            vec = client.embed(text)
+            vec = get_llm_provider().embed(text)
             if vec and isinstance(vec, list) and len(vec) > 8:
                 self._llm_ok = True
                 return vec

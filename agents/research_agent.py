@@ -1,4 +1,4 @@
-"""Research Agent – retrieve + curriculum + optional LLM summary."""
+"""Research Agent – retrieve + curriculum + optional LLM summary via LLMProvider."""
 
 from __future__ import annotations
 
@@ -49,22 +49,26 @@ class ResearchAgent(BaseAgent):
             except Exception as e:
                 logger.debug(f"research retrieve: {e}")
 
-        # 3) Optional LLM synthesis
+        # 3) Optional LLM synthesis via provider
         synthesis = None
         llm_used = False
+        provider_name = None
         try:
-            from brain.llm.client import get_llm_client
+            from brain.llm.provider import get_llm_provider
 
-            client = get_llm_client()
-            if client.is_available and snippets:
+            provider = get_llm_provider()
+            provider_name = provider.name
+            if provider.is_available and snippets:
                 ctx = "\n".join(f"- {s}" for s in snippets[:8] if s)
-                synthesis = client.complete(
+                comp = provider.complete(
                     f"Sual: {task}\n\nMəlumat:\n{ctx}\n\nQısa, dəqiq cavab yaz.",
                     system="Sən araşdırma xülasəçisisən. Yalnız verilən məlumata əsaslan.",
                     temperature=0.2,
                     max_tokens=400,
                 )
-                llm_used = True
+                if comp.ok:
+                    synthesis = comp.text
+                    llm_used = True
         except Exception:
             pass
 
@@ -83,6 +87,7 @@ class ResearchAgent(BaseAgent):
                 "snippets": snippets[:10],
                 "sources": sources[:10],
                 "llm_used": llm_used,
+                "provider": provider_name,
                 "experimental": True,
             },
         )

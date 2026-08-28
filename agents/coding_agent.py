@@ -1,4 +1,4 @@
-"""Coding Agent – sandbox only, stronger offline templates."""
+"""Coding Agent – sandbox only, stronger offline templates + LLMProvider."""
 
 from __future__ import annotations
 
@@ -26,35 +26,36 @@ class CodingAgent(BaseAgent):
 
         try:
             from tools.registry import tool_registry
-            from brain.llm.client import get_llm_client
+            from brain.llm.provider import get_llm_provider
         except Exception as e:
             return AgentResult(success=False, error=str(e))
 
-        client = get_llm_client()
+        provider = get_llm_provider()
         system = (
             "Sən kod generasiya edən agentisən. Yalnız təhlükəsiz Python kodu ver. "
             "Markdown code fence istifadə et. import/os/sys/subprocess yazma."
         )
 
         code = ""
-        if client.is_available:
-            raw = (
-                client.complete(
-                    f"Tapşırıq: {task}\nYalnız kod:",
-                    system=system,
-                    temperature=0.2,
-                    max_tokens=800,
-                )
-                or ""
+        llm_used = False
+        if provider.is_available:
+            comp = provider.complete(
+                f"Tapşırıq: {task}\nYalnız kod:",
+                system=system,
+                temperature=0.2,
+                max_tokens=800,
             )
-            m = re.search(r"```(?:python)?\s*([\s\S]+?)```", raw)
-            code = (m.group(1) if m else raw).strip()
-            if _FORBIDDEN.search(code):
-                return AgentResult(
-                    success=False,
-                    error="generated code contains forbidden tokens",
-                    metadata={"code": code[:300]},
-                )
+            raw = comp.text if comp.ok else ""
+            if raw:
+                llm_used = True
+                m = re.search(r"```(?:python)?\s*([\s\S]+?)```", raw)
+                code = (m.group(1) if m else raw).strip()
+                if _FORBIDDEN.search(code):
+                    return AgentResult(
+                        success=False,
+                        error="generated code contains forbidden tokens",
+                        metadata={"code": code[:300]},
+                    )
             if not code:
                 code = self._offline_code(task)
         else:
@@ -81,7 +82,8 @@ class CodingAgent(BaseAgent):
             metadata={
                 "sandbox": True,
                 "filename": filename,
-                "llm_used": bool(client.is_available),
+                "llm_used": llm_used,
+                "provider": provider.name,
             },
         )
 
