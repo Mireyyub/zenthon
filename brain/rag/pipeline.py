@@ -1,6 +1,6 @@
 """
-RAG Pipeline — from Drive zenthon_v08, adapted for Leon.
-Chunk → hybrid retrieve → optional LLM generate (via LLMProvider).
+RAG Pipeline — chunk → hybrid retrieve → optional LLM generate (LLMProvider).
+Phase 8: disk persist under data/leon/rag.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from core.logger import logger
+from core.persistence import write_json, read_json
 
 
 @dataclass
@@ -33,6 +34,27 @@ class Chunk:
     keywords: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
     score: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "chunk_id": self.chunk_id,
+            "doc_id": self.doc_id,
+            "content": self.content,
+            "keywords": list(self.keywords),
+            "metadata": dict(self.metadata),
+            "score": self.score,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "Chunk":
+        return cls(
+            chunk_id=str(d.get("chunk_id") or ""),
+            doc_id=str(d.get("doc_id") or ""),
+            content=str(d.get("content") or ""),
+            keywords=list(d.get("keywords") or []),
+            metadata=dict(d.get("metadata") or {}),
+            score=float(d.get("score") or 0),
+        )
 
 
 @dataclass
@@ -101,7 +123,7 @@ class TextChunker:
 
 
 class RAGPipeline:
-    def __init__(self, persist_dir: Optional[str] = None):
+    def __init__(self, persist_dir: Optional[str] = None, auto_load: bool = True):
         try:
             from core.config import config
 
@@ -110,9 +132,12 @@ class RAGPipeline:
             base = Path("data/leon/rag")
         self.dir = Path(persist_dir) if persist_dir else base
         self.dir.mkdir(parents=True, exist_ok=True)
+        self._index_path = self.dir / "index.json"
         self.chunker = TextChunker()
         self._chunks: List[Chunk] = []
         self._docs: Dict[str, Document] = {}
+        if auto_load:
+            self.load()
 
     def ingest_text(
         self, text: str, source: str = "manual", doc_id: Optional[str] = None
@@ -122,6 +147,7 @@ class RAGPipeline:
         self._docs[doc_id] = doc
         for ch in self.chunker.chunk(text, doc_id, {"source": source}):
             self._chunks.append(ch)
+        self.save()
         logger.info(f"RAG ingest {doc_id} chunks={len(self._chunks)}")
         return doc
 
@@ -145,7 +171,7 @@ class RAGPipeline:
     def query(self, question: str, top_k: int = 5, generate: bool = False) -> Dict[str, Any]:
         ctx = self.retrieve(question, top_k=top_k)
         answer = None
-        llm_meta: Dict[str, Any] = {}
+        meta: Dict[str, Any] = {}
         if generate and ctx.combined_text:
             try:
                 from brain.llm.provider import get_llm_provider
@@ -157,24 +183,70 @@ class RAGPipeline:
                 comp = provider.complete(
                     prompt, system="Kontekstə əsaslan.", max_tokens=400
                 )
-                if comp.ok and comp.text:
+                if comp.ok:
                     answer = comp.text
-                    llm_meta = {
+                    meta = {
                         "provider": comp.provider,
                         "model": comp.model,
                         "latency_ms": comp.latency_ms,
                     }
                 else:
-                    answer = f"[generate failed] {comp.error or 'empty'}"
+                    answer = f"[generate failed] {comp.error}"
             except Exception as e:
                 answer = f"[generate failed] {e}"
-        out: Dict[str, Any] = {
+        return {
             "question": question,
             "context": ctx.combined_text,
             "sources": ctx.sources,
             "chunks": len(ctx.chunks),
             "answer": answer,
+            "generate_meta": meta,
+            "persisted_chunks": len(self._chunks),
         }
-        if llm_meta:
-            out["llm"] = llm_meta
-        return out
+
+    def save(self) -> None:
+        payload = {
+            "version": 1,
+            "saved_at": datetime.now().isoformat(),
+            "chunks": [c.to_dict() for c in self._chunks],
+            "docs": {
+                did: {
+                    "doc_id": d.doc_id,
+                    "content": d.content[:2000],
+                    "source": d.source,
+                    "created_at": d.created_at,
+                }
+                for did, d in self._docs.items()
+            },
+        }
+        write_json(self._index_path, payload)
+
+    def load(self) -> int:
+        data = read_json(self._index_path, default={})
+        if not isinstance(data, dict):
+            return 0
+        self._chunks = [Chunk.from_dict(c) for c in (data.get("chunks") or []) if isinstance(c, dict)]
+        docs_raw = data.get("docs") or {}
+        self._docs = {}
+        for did, d in docs_raw.items():
+            if isinstance(d, dict):
+                self._docs[did] = Document(
+                    doc_id=str(d.get("doc_id") or did),
+                    content=str(d.get("content") or ""),
+                    source=str(d.get("source") or "unknown"),
+                    created_at=str(d.get("created_at") or ""),
+                )
+        return len(self._chunks)
+
+    def stats(self) -> Dict[str, Any]:
+        return {
+            "chunks": len(self._chunks),
+            "docs": len(self._docs),
+            "index_path": str(self._index_path),
+            "index_exists": self._index_path.exists(),
+        }
+
+    def clear(self) -> None:
+        self._chunks.clear()
+        self._docs.clear()
+        self.save()

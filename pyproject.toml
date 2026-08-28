@@ -4,8 +4,8 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "zenthon"
-version = "0.7.0"
-description = "Leon AI Platform — offline-first cognitive prototype (memory, curriculum, reasoning, agents, self-improve)"
+version = "0.8.0"
+description = "Leon AI Platform — offline-first cognitive prototype (memory, curriculum, reasoning, agents, desktop readiness)"
 authors = ["Mireyyub <mireyyub@gmail.com>"]
 license = "MIT"
 readme = "README.md"

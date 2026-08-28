@@ -1,5 +1,5 @@
 """
-Leon /api/v1 gateway (Phase 3–5).
+Leon /api/v1 gateway (Phase 3–8).
 
 All handlers call the same cognitive path as legacy routes.
 Tasks: durable SQLite when available.
@@ -37,7 +37,15 @@ api_v1_router = APIRouter(prefix="/api/v1", tags=["v1"])
 def v1_health() -> Dict[str, Any]:
     from interfaces.api.health import health_report
 
-    return health_report()
+    report = health_report()
+    try:
+        from native_core import health_report as native_health, desktop_status
+
+        report.setdefault("components", {})["native_core"] = native_health()
+        report.setdefault("components", {})["desktop"] = desktop_status()
+    except Exception as e:
+        report.setdefault("components", {})["native_core"] = {"error": str(e)}
+    return report
 
 
 @api_v1_router.get("/status")
@@ -53,6 +61,17 @@ def v1_status() -> Dict[str, Any]:
 @api_v1_router.get("/system/status")
 def v1_system_status() -> Dict[str, Any]:
     return v1_status()
+
+
+@api_v1_router.get("/system/desktop")
+def v1_system_desktop() -> Dict[str, Any]:
+    """Honest hybrid-desktop readiness (Phase 8)."""
+    try:
+        from native_core import desktop_status
+
+        return desktop_status()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @api_v1_router.get("/native-core/status")
@@ -467,11 +486,13 @@ def v1_audio(body: AudioBody) -> Dict[str, Any]:
 def v1_index() -> Dict[str, Any]:
     return {
         "name": "Leon API v1",
-        "version": "0.7.0",
+        "version": "0.8.0",
         "prefix": "/api/v1",
         "endpoints": [
             "GET  /health",
             "GET  /status",
+            "GET  /system/desktop",
+            "GET  /native-core/status",
             "POST /chat",
             "POST /think",
             "POST /reason",
@@ -486,4 +507,5 @@ def v1_index() -> Dict[str, Any]:
         ],
         "bind_policy": "default 127.0.0.1",
         "storage": "SQLite data/leon/leon.db (JSON dual-read preserved)",
+        "desktop": "readiness probe only — Tauri not shipped",
     }

@@ -1,6 +1,6 @@
-# Leon / Zenthon — Public Python Surface (Phase 2–3)
+# Leon / Zenthon — Public Python Surface (Phase 2–8)
 
-**Version:** 0.7.0 (cognitive prototype)  
+**Version:** 0.8.0 (cognitive prototype + desktop readiness)  
 **Rule:** Prefer these imports. Everything else is internal, experimental, or legacy.
 
 ---
@@ -20,6 +20,8 @@ interfaces (CLI / FastAPI / GUI)
 
 Do **not** call `ThinkingBrain` or ad-hoc LLM answerers for user queries.
 
+LLM calls go through `brain.llm.get_llm_provider()` (OllamaProvider / MockProvider).
+
 ---
 
 ## Public packages (stable for integrators)
@@ -27,9 +29,11 @@ Do **not** call `ThinkingBrain` or ad-hoc LLM answerers for user queries.
 | Package | Public symbols | Notes |
 |---------|----------------|-------|
 | `core` | `config`, `logger`, `event_bus`, `start_leon`, `leon_status`, `smoke_test`, `save_state`, `load_state` | Bootstrap + config |
-| `core.contracts` | `Task`, `TaskStatus`, `EventName`, `AgentMessage`, … | Phase 1 domain contracts |
+| `core.contracts` | `Task`, `TaskStatus`, `EventName`, `AgentMessage`, … | Domain contracts |
+| `core.storage` | SQLite helpers, migrate | Tasks durable |
 | `brain` | `BrainOrchestrator`, `reasoning_engine`, `ReasoningEngine` | Only public think path |
-| `brain.llm` | `get_llm_client`, `get_llm_provider`, `LLMProvider`, `MockProvider` | Provider abstraction |
+| `brain.llm` | `get_llm_provider`, `LLMProvider`, `MockProvider`, `get_llm_client` | Provider primary; client compat |
+| `brain.rag` | `RAGPipeline` | Disk index under `data/leon/rag` |
 | `knowledge` | `get_fact_store`, `get_graph`, `FactStore`, `KnowledgeGraph` | Registry-backed |
 | `memory` | `MemoryManager`, `retrieve`, `UnifiedRetriever`, `WorkingMemory`, `VectorMemory` | |
 | `curriculum` | `CurriculumEngine`, `list_volumes`, `load_volume` | Volumes 01–07 |
@@ -37,12 +41,13 @@ Do **not** call `ThinkingBrain` or ad-hoc LLM answerers for user queries.
 | `agents` | `agent_manager`, `BaseAgent`, `AgentResult` | Production: react, coding |
 | `security` | `safe_tool_call`, `gate_tool`, `sandbox`, `tool_allowlist`, `audit_log` | Mandatory for tools |
 | `tools` | `tool_registry` | Always via security gate |
+| `native_core` | `get_native_core`, `desktop_status`, `desktop_readiness` | Optional accel + readiness |
 | `interfaces.api.main` | `app` | FastAPI; default bind **127.0.0.1** |
 | `interfaces.cli.main_cli` | CLI entry | |
 
 ---
 
-## HTTP API (Phase 3)
+## HTTP API
 
 **Prefer:** `/api/v1/*`  
 **Legacy:** root paths still work (compatibility).
@@ -50,8 +55,10 @@ Do **not** call `ThinkingBrain` or ad-hoc LLM answerers for user queries.
 | Method | Path | Purpose |
 |--------|------|--------|
 | GET | `/api/v1/` | v1 index |
-| GET | `/api/v1/health` | Health report |
+| GET | `/api/v1/health` | Health + native + desktop components |
 | GET | `/api/v1/status` | `leon_status()` |
+| GET | `/api/v1/system/desktop` | Desktop readiness (honest) |
+| GET | `/api/v1/native-core/status` | Native binary / fallback |
 | POST | `/api/v1/chat` | UI chat → Orchestrator |
 | POST | `/api/v1/think` | Orchestrator.run |
 | POST | `/api/v1/reason` | ReasoningEngine.reason |
@@ -59,7 +66,7 @@ Do **not** call `ThinkingBrain` or ad-hoc LLM answerers for user queries.
 | GET | `/api/v1/agents` | List agents |
 | POST | `/api/v1/agents/run` | Single agent |
 | POST | `/api/v1/agents/orchestrate` | Multi agent |
-| GET/POST | `/api/v1/tasks` | In-memory tasks (not durable yet) |
+| GET/POST | `/api/v1/tasks` | Durable tasks when SQLite ok |
 | POST | `/api/v1/memory/retrieve` | Unified retrieve |
 | GET | `/api/v1/knowledge/facts` | Fact sample |
 | GET | `/api/v1/knowledge/graph` | Graph stats |
@@ -67,10 +74,11 @@ Do **not** call `ThinkingBrain` or ad-hoc LLM answerers for user queries.
 | POST | `/api/v1/teach` | Teach lesson/volume |
 | POST | `/api/v1/self/improve` | Self-learning sync |
 | GET | `/api/v1/self/view` | High-level body map |
-| GET | `/api/v1/models` | LLM provider health |
+| GET | `/api/v1/models` | LLMProvider health |
 | GET | `/api/v1/tools` | Tool names (gated) |
 | POST | `/api/v1/tools/call` | `safe_tool_call` only |
 | POST | `/api/v1/media/*` | Multimodal |
+| WS | `/ws` | Typed events |
 
 OpenAPI: `http://127.0.0.1:8000/docs`
 
@@ -81,7 +89,7 @@ Env: `LEON_API_HOST`, `LEON_API_PORT`
 
 ## Internal / experimental / legacy
 
-See `LEGACY.md` and `agents/EXPERIMENTAL.md`.
+See `LEGACY.md`, `agents/EXPERIMENTAL.md`, `docs/DESKTOP.md`.
 
 ---
 
@@ -97,8 +105,9 @@ from agents import agent_manager
 from security import safe_tool_call
 from core.contracts import Task, EventName, AgentMessage
 from brain.llm import get_llm_provider
+from native_core import desktop_status, get_native_core
 ```
 
 ---
 
-*Phase 2 isolation + Phase 3 /api/v1. No cognitive behavior change.*
+*Phases 2–8: isolation, /api/v1, events, SQLite, LLMProvider, agents, desktop readiness. No cognitive path rewrite.*
