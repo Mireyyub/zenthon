@@ -2,7 +2,7 @@
 Skeleton-of-Thought (SoT) Reasoning.
 
 Əvvəlcə skelet yaradır, sonra hər hissəni genişləndirir.
-LLM mövcuddursa real model ilə, yoxdursa fallback.
+LLMProvider mövcuddursa real model ilə, yoxdursa fallback.
 """
 
 from typing import List, Dict, Any, Optional
@@ -37,10 +37,10 @@ class SkeletonOfThought:
         self, query: str, context: List[str], goal: Optional[str]
     ) -> Optional[Dict[str, Any]]:
         try:
-            from brain.llm.client import get_llm_client
+            from brain.llm.provider import get_llm_provider
 
-            client = get_llm_client()
-            if not client.is_available:
+            provider = get_llm_provider()
+            if not provider.is_available:
                 return None
 
             parts = [f"Sual / Tapşırıq: {query}"]
@@ -51,10 +51,13 @@ class SkeletonOfThought:
             parts.append("Skelet yarat, sonra genişləndir və nəticə çıxar.")
             prompt = "\n\n".join(parts)
 
-            raw = client.complete(prompt, system=self.SYSTEM_PROMPT, temperature=0.35)
-            if not raw:
+            comp = provider.complete(
+                prompt, system=self.SYSTEM_PROMPT, temperature=0.35
+            )
+            if not comp.ok or not comp.text:
                 return None
 
+            raw = comp.text
             lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
             trace = lines if lines else [raw[:400]]
 
@@ -75,13 +78,16 @@ class SkeletonOfThought:
             if goal:
                 confidence += 0.03
 
-            logger.info("SoT: LLM cavabı uğurla alındı.")
+            logger.info(f"SoT: LLM cavabı uğurla alındı (provider={comp.provider}).")
             return {
                 "trace": trace,
                 "conclusion": conclusion,
                 "confidence": round(min(0.94, confidence), 3),
                 "method": "skeleton_of_thought",
                 "llm_used": True,
+                "llm_provider": comp.provider,
+                "llm_model": comp.model,
+                "llm_latency_ms": comp.latency_ms,
             }
         except Exception as e:
             logger.warning(f"SoT LLM error: {e}")

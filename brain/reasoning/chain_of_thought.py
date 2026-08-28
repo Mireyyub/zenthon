@@ -1,7 +1,7 @@
 """
 Chain-of-Thought (CoT) Reasoning.
 
-LLM mövcuddursa real model ilə işləyir,
+LLM mövcuddursa real model ilə işləyir (LLMProvider),
 yoxdursa qayda əsaslı fallback istifadə edir.
 """
 
@@ -27,7 +27,7 @@ class ChainOfThought:
     ) -> Dict[str, Any]:
         context = context or []
 
-        # LLM cəhdi
+        # LLM cəhdi via LLMProvider
         llm_result = self._try_llm(query, context, goal, max_steps)
         if llm_result is not None:
             return llm_result
@@ -43,10 +43,10 @@ class ChainOfThought:
         max_steps: int,
     ) -> Optional[Dict[str, Any]]:
         try:
-            from brain.llm.client import get_llm_client
+            from brain.llm.provider import get_llm_provider
 
-            client = get_llm_client()
-            if not client.is_available:
+            provider = get_llm_provider()
+            if not provider.is_available:
                 return None
 
             parts = [f"Sual: {query}"]
@@ -60,20 +60,24 @@ class ChainOfThought:
             )
             prompt = "\n\n".join(parts)
 
-            raw = client.complete(prompt, system=self.SYSTEM_PROMPT)
-            if not raw:
+            comp = provider.complete(prompt, system=self.SYSTEM_PROMPT)
+            if not comp.ok or not comp.text:
                 return None
 
+            raw = comp.text
             trace, conclusion = self._parse_llm_output(raw, query)
             confidence = self._estimate_confidence(raw, context, goal)
 
-            logger.info("CoT: LLM cavabı uğurla alındı.")
+            logger.info(f"CoT: LLM cavabı uğurla alındı (provider={comp.provider}).")
             return {
                 "trace": trace,
                 "conclusion": conclusion,
                 "confidence": confidence,
                 "method": "chain_of_thought",
                 "llm_used": True,
+                "llm_provider": comp.provider,
+                "llm_model": comp.model,
+                "llm_latency_ms": comp.latency_ms,
             }
         except Exception as e:
             logger.warning(f"CoT LLM error: {e}")

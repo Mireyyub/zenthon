@@ -1,6 +1,6 @@
 """
 RAG Pipeline — from Drive zenthon_v08, adapted for Leon.
-Chunk → hybrid retrieve → optional LLM generate.
+Chunk → hybrid retrieve → optional LLM generate (via LLMProvider).
 """
 
 from __future__ import annotations
@@ -145,21 +145,36 @@ class RAGPipeline:
     def query(self, question: str, top_k: int = 5, generate: bool = False) -> Dict[str, Any]:
         ctx = self.retrieve(question, top_k=top_k)
         answer = None
+        llm_meta: Dict[str, Any] = {}
         if generate and ctx.combined_text:
             try:
-                from brain.llm.client import get_llm_client
+                from brain.llm.provider import get_llm_provider
 
-                client = get_llm_client()
+                provider = get_llm_provider()
                 prompt = (
                     f"Kontekst:\n{ctx.combined_text[:2000]}\n\nSual: {question}\nCavab:"
                 )
-                answer = client.complete(prompt, system="Kontekstə əsaslan.", max_tokens=400)
+                comp = provider.complete(
+                    prompt, system="Kontekstə əsaslan.", max_tokens=400
+                )
+                if comp.ok and comp.text:
+                    answer = comp.text
+                    llm_meta = {
+                        "provider": comp.provider,
+                        "model": comp.model,
+                        "latency_ms": comp.latency_ms,
+                    }
+                else:
+                    answer = f"[generate failed] {comp.error or 'empty'}"
             except Exception as e:
                 answer = f"[generate failed] {e}"
-        return {
+        out: Dict[str, Any] = {
             "question": question,
             "context": ctx.combined_text,
             "sources": ctx.sources,
             "chunks": len(ctx.chunks),
             "answer": answer,
         }
+        if llm_meta:
+            out["llm"] = llm_meta
+        return out

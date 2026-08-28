@@ -1,11 +1,10 @@
 """
 Tree-of-Thoughts (ToT) Reasoning.
 
-LLM ilə bir neçə budaq generasiya edir, yoxdursa fallback.
+LLMProvider ilə bir neçə budaq generasiya edir, yoxdursa fallback.
 """
 
 from typing import List, Dict, Any, Optional
-import re
 
 from core.logger import logger
 
@@ -37,10 +36,10 @@ class TreeOfThoughts:
         self, query: str, context: List[str], goal: Optional[str]
     ) -> Optional[Dict[str, Any]]:
         try:
-            from brain.llm.client import get_llm_client
+            from brain.llm.provider import get_llm_provider
 
-            client = get_llm_client()
-            if not client.is_available:
+            provider = get_llm_provider()
+            if not provider.is_available:
                 return None
 
             parts = [f"Sual: {query}"]
@@ -51,15 +50,17 @@ class TreeOfThoughts:
             parts.append("3 fərqli budaq yarat və ən yaxşısını seç.")
             prompt = "\n\n".join(parts)
 
-            raw = client.complete(prompt, system=self.SYSTEM_PROMPT, temperature=0.6)
-            if not raw:
+            comp = provider.complete(
+                prompt, system=self.SYSTEM_PROMPT, temperature=0.6
+            )
+            if not comp.ok or not comp.text:
                 return None
 
+            raw = comp.text
             trace = [ln.strip() for ln in raw.splitlines() if ln.strip()]
             if not trace:
                 trace = [raw[:400]]
 
-            # Seçilmiş budağı tap
             selected = "Praktik"
             for ln in trace:
                 if "seçilmiş" in ln.lower() or "selected" in ln.lower():
@@ -77,7 +78,7 @@ class TreeOfThoughts:
             if goal:
                 confidence += 0.03
 
-            logger.info("ToT: LLM cavabı uğurla alındı.")
+            logger.info(f"ToT: LLM cavabı uğurla alındı (provider={comp.provider}).")
             return {
                 "trace": trace,
                 "conclusion": conclusion,
@@ -85,6 +86,9 @@ class TreeOfThoughts:
                 "method": "tree_of_thoughts",
                 "selected_branch": selected[:60],
                 "llm_used": True,
+                "llm_provider": comp.provider,
+                "llm_model": comp.model,
+                "llm_latency_ms": comp.latency_ms,
             }
         except Exception as e:
             logger.warning(f"ToT LLM error: {e}")
