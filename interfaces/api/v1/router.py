@@ -1,5 +1,5 @@
 """
-Leon /api/v1 gateway (Phase 3–8).
+Leon /api/v1 gateway (Phase 3–10).
 
 All handlers call the same cognitive path as legacy routes.
 Tasks: durable SQLite when available.
@@ -70,6 +70,17 @@ def v1_system_desktop() -> Dict[str, Any]:
         from native_core import desktop_status
 
         return desktop_status()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_v1_router.get("/system/supervisor")
+def v1_system_supervisor() -> Dict[str, Any]:
+    """Process supervisor probe (Phase 10). Does not start a managed child."""
+    try:
+        from core.supervisor import supervisor_status
+
+        return supervisor_status()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -492,6 +503,7 @@ def v1_index() -> Dict[str, Any]:
             "GET  /health",
             "GET  /status",
             "GET  /system/desktop",
+            "GET  /system/supervisor",
             "GET  /native-core/status",
             "POST /chat",
             "POST /think",
@@ -507,5 +519,5 @@ def v1_index() -> Dict[str, Any]:
         ],
         "bind_policy": "default 127.0.0.1",
         "storage": "SQLite data/leon/leon.db (JSON dual-read preserved)",
-        "desktop": "readiness probe only — Tauri not shipped",
+        "desktop": "supervisor working; Tauri seed only — packaging Phase 11",
     }
