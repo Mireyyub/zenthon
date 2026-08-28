@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Leon CI – hard-fail cognitive suite
+# Leon CI – hard-fail cognitive suite + phase 8–12 checks
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -15,11 +15,24 @@ python -m pytest \
   tests/unit/test_self_mutate.py \
   -q --tb=short
 
+echo "=== phase unit 8-11 ==="
+python -m pytest \
+  tests/unit/test_phase8_desktop.py \
+  tests/unit/test_phase10_supervisor.py \
+  tests/unit/test_phase11_packaging.py \
+  -q --tb=short
+
 echo "=== integration ==="
-python -m pytest tests/integration/test_cognitive_persist.py tests/integration/test_phases_smoke.py -q --tb=short
+python -m pytest tests/integration/test_cognitive_persist.py tests/integration/test_phases_smoke.py tests/integration/test_e2e_desktop_flow.py -q --tb=short
 
 echo "=== verify phases 1-8 ==="
 python scripts/verify_phases_1_8.py
+
+echo "=== verify phases 9-12 ==="
+python scripts/verify_phases_9_12.py
+
+echo "=== e2e desktop smoke ==="
+python scripts/e2e_desktop_smoke.py
 
 echo "=== system body ==="
 python - <<'PY'

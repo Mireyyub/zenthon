@@ -1,53 +1,52 @@
-# Leon / Zenthon — Desktop path (Phase 8–11)
+# Leon / Zenthon — Desktop path (Phase 8–12)
 
-**Honest status:** cognitive core + API + React client + supervisor + **Windows PyInstaller/NSIS packaging scripts** exist.  
-**Not yet:** polished single-click Tauri commercial installer.
+**Honest status:** hybrid stack through packaging scripts + E2E smoke is in place.  
+**Not claimed:** signed commercial Tauri store product.
 
 ---
 
-## Today
+## Stack map
 
-| Layer | Reality |
-|-------|--------|
-| Cognitive | Python ReasoningEngine + agents |
-| API | FastAPI `/api/v1` on 127.0.0.1 |
-| Supervisor | `core/supervisor.py` |
-| Desktop entry | `leon_desktop.py` / `Zenthon.exe` |
-| Packaging | `scripts/build_windows.ps1` + `windows/Zenthon.nsi` |
-| GUI | Tkinter primary; React in `ui/` |
-| Tauri | Seed under `desktop/tauri/` |
+| Phase | Deliverable |
+|-------|-------------|
+| 8 | Desktop readiness + RAG persist |
+| 9 | React `/api/v1` client (`ui/`) |
+| 10 | Process supervisor + Tauri seed |
+| 11 | Windows PyInstaller/NSIS packaging |
+| 12 | E2E smoke + manual checklist |
 
-### Dev run
+## Commands
 
 ```bash
+# cognitive + API e2e
+python scripts/e2e_desktop_smoke.py
+
+# live supervisor child process
+LEON_E2E_LIVE_SUPERVISOR=1 python scripts/e2e_desktop_smoke.py
+
+# desktop entry (dev)
 python leon_desktop.py
-# or API only
-python scripts/run_supervised_api.py
-```
 
-### Windows build
-
-```powershell
+# Windows package (on Windows)
 .\scripts\build_windows.ps1
-.\scripts\build_windows.ps1 -Installer
 ```
 
-See `docs/PACKAGING.md` and `windows/README.md`.
+## Probes
 
----
+- `GET /api/v1/health`
+- `GET /api/v1/system/desktop`
+- `GET /api/v1/system/supervisor`
 
-## Rules
+## Docs
+
+- `docs/E2E.md` — automated + manual Windows checklist  
+- `docs/PACKAGING.md` — installer scope  
+- `windows/README.md` — build notes  
+
+## Rules (unchanged)
 
 1. No AI in Rust/React  
-2. Default bind 127.0.0.1  
-3. Tools via security gate  
-4. Offline-first  
-5. Packaging claims match scripts (PyInstaller path now; Tauri later)
-
----
-
-## Next
-
-| Phase | Focus |
-|-------|--------|
-| **12** | E2E install → chat → shutdown → restart checklist + smoke |
+2. 127.0.0.1 default  
+3. Security gate mandatory for tools  
+4. Offline-first / soft LLM failure  
+5. Claims = code  
